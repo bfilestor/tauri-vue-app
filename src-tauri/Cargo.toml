@@ -2,11 +2,11 @@
 name = "tauri-vue-app"
 version = "1.0.2"
 description = "Tauri Vue App"
-authors = ["you"]
+authors = ["guoqiang"]
 license = ""
 repository = ""
-edition = "2021"
-rust-version = "1.79.0"
+edition = "2024"
+rust-version = "1.92.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,7 +24,7 @@ tauri-build = { version = "2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.9.5", features = ["tray-icon", "image-png", "devtools" ] }
+tauri = { version = "2.10", features = ["tray-icon", "image-png", "devtools" ] }
 tauri-plugin-log = "2.0.0"
 tauri-plugin-dialog = "2"
 
