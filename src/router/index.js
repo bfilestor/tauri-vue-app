@@ -28,6 +28,16 @@ const routes = [
         component: () => import('@/views/trends/index.vue'),
       },
       {
+        path: '/history',
+        name: 'History',
+        meta: {
+          keepAlive: true,
+          title: '历史记录',
+          icon: 'history',
+        },
+        component: () => import('@/views/history/index.vue'),
+      },
+      {
         path: '/settings',
         name: 'Settings',
         meta: {

@@ -155,6 +155,102 @@ pub fn delete_record(id: String, db: State<Database>) -> Result<bool, String> {
     Ok(true)
 }
 
+use crate::commands::ocr::OcrParsedItem;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct HistoryTimelineItem {
+    pub id: String,
+    pub checkup_date: String,
+    pub status: String,
+    pub notes: String,
+    pub abnormal_items: Vec<AbnormalItem>,
+    pub ai_analysis: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AbnormalItem {
+    pub project_name: String,
+    pub name: String,
+    pub value: String,
+    pub unit: String,
+    pub reference_range: String,
+}
+
+#[tauri::command]
+pub fn get_history_timeline(db: State<Database>) -> Result<Vec<HistoryTimelineItem>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    
+    // 1. 获取所有检查记录
+    let mut stmt = conn.prepare(
+        "SELECT id, checkup_date, status, notes 
+         FROM checkup_records 
+         ORDER BY checkup_date DESC"
+    ).map_err(|e| format!("查询记录失败: {}", e))?;
+    
+    let records = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?, // id
+            row.get::<_, String>(1)?, // date
+            row.get::<_, String>(2)?, // status
+            row.get::<_, String>(3)?, // notes
+        ))
+    }).map_err(|e| format!("查询失败: {}", e))?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| format!("解析失败: {}", e))?;
+
+    let mut result = Vec::new();
+
+    for (id, date, status, notes) in records {
+        // 2. 获取该记录的异常指标 (通过 OCR 结果)
+        let mut abnormal_items = Vec::new();
+        let mut ocr_stmt = conn.prepare(
+             "SELECT o.parsed_items, p.name 
+              FROM ocr_results o
+              LEFT JOIN checkup_projects p ON o.project_id = p.id
+              WHERE o.record_id = ?1 AND o.status = 'success'"
+        ).map_err(|e| format!("查询OCR失败: {}", e))?;
+        
+        let ocr_rows = ocr_stmt.query_map([&id], |row| {
+             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1).unwrap_or_default()))
+        }).map_err(|e| format!("查询OCR失败: {}", e))?;
+        
+        for row in ocr_rows {
+             if let Ok((json, project_name)) = row {
+                 if let Ok(items) = serde_json::from_str::<Vec<OcrParsedItem>>(&json) {
+                     for item in items {
+                         if item.is_abnormal {
+                             abnormal_items.push(AbnormalItem {
+                                 project_name: project_name.clone(),
+                                 name: item.name,
+                                 value: item.value,
+                                 unit: item.unit,
+                                 reference_range: item.reference_range,
+                             });
+                         }
+                     }
+                 }
+             }
+        }
+
+        // 3. 获取最新的 AI 分析结果
+        let ai_analysis: Option<String> = conn.query_row(
+            "SELECT response_content FROM ai_analyses WHERE record_id = ?1 AND status = 'success' ORDER BY created_at DESC LIMIT 1",
+            [&id],
+            |row| row.get(0)
+        ).ok();
+
+        result.push(HistoryTimelineItem {
+            id,
+            checkup_date: date,
+            status,
+            notes,
+            abnormal_items,
+            ai_analysis,
+        });
+    }
+
+    Ok(result)
+}
 /// 获取单条检查记录详情
 #[tauri::command]
 pub fn get_record(id: String, db: State<Database>) -> Result<CheckupRecord, String> {
@@ -195,4 +291,30 @@ pub fn get_record(id: String, db: State<Database>) -> Result<CheckupRecord, Stri
     record.project_names = Some(names);
 
     Ok(record)
+}
+
+#[tauri::command]
+pub fn get_or_create_today_record(db: State<Database>) -> Result<CheckupRecord, String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    
+    // 1. 尝试查找今天的记录
+    let existing_id: Option<String> = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT id FROM checkup_records WHERE checkup_date = ?1 LIMIT 1",
+            [&today],
+            |row| row.get(0),
+        ).ok()
+    };
+
+    if let Some(id) = existing_id {
+        return get_record(id, db);
+    }
+
+    // 2. 不存在则创建
+    let input = CreateRecordInput {
+        checkup_date: today,
+        notes: None,
+    };
+    create_record(input, db)
 }
