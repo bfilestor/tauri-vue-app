@@ -14,7 +14,7 @@ pub struct AiClientConfig {
 /// 根据配置构建 HTTP 客户端（支持 SOCKS5 代理）
 pub fn build_client(config: &AiClientConfig) -> Result<Client, String> {
     let mut builder = Client::builder()
-        .timeout(Duration::from_secs(30));
+        .timeout(Duration::from_secs(60));
 
     if config.proxy_enabled && !config.proxy_url.is_empty() {
         let proxy_addr = if config.proxy_url.starts_with("socks5://") || config.proxy_url.starts_with("http") {

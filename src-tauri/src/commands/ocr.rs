@@ -164,6 +164,13 @@ pub async fn start_ocr(
                 status: "processing".to_string(),
             }).ok();
 
+            // 避免请求过快导致 Rate Limit，添加延时 (如果是第一个文件不需要延时)
+            if i > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+
+            log::info!("正在处理文件 {}/{}: {}", i + 1, total_files, filename);
+
             // 读取图片文件并转 Base64
             let full_path = app_dir_path.join(stored_path);
             let file_bytes = match std::fs::read(&full_path) {
