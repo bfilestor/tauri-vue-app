@@ -65,6 +65,10 @@ pub async fn start_ocr(
                  FROM checkup_files f
                  LEFT JOIN checkup_projects p ON f.project_id = p.id
                  WHERE f.record_id = ?1
+                   AND NOT EXISTS (
+                       SELECT 1 FROM ocr_results o
+                       WHERE o.file_id = f.id AND o.status = 'success'
+                   )
                  ORDER BY p.name ASC, f.uploaded_at ASC"
             )
             .map_err(|e| format!("查询文件失败: {}", e))?;

@@ -42,7 +42,9 @@ pub fn run() {
             commands::record::create_record,
             commands::record::update_record,
             commands::record::delete_record,
+
             commands::record::get_record,
+            commands::record::get_or_create_today_record,
             commands::file::upload_files,
             commands::file::list_files,
             commands::file::read_file_base64,

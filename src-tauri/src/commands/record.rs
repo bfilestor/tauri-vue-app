@@ -196,3 +196,28 @@ pub fn get_record(id: String, db: State<Database>) -> Result<CheckupRecord, Stri
 
     Ok(record)
 }
+#[tauri::command]
+pub fn get_or_create_today_record(db: State<Database>) -> Result<CheckupRecord, String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    
+    // 1. 尝试查找今天的记录
+    let existing_id: Option<String> = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT id FROM checkup_records WHERE checkup_date = ?1 LIMIT 1",
+            [&today],
+            |row| row.get(0),
+        ).ok()
+    };
+
+    if let Some(id) = existing_id {
+        return get_record(id, db);
+    }
+
+    // 2. 不存在则创建
+    let input = CreateRecordInput {
+        checkup_date: today,
+        notes: None,
+    };
+    create_record(input, db)
+}
