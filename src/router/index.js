@@ -5,22 +5,37 @@ const routes = [
     path: '/',
     name: 'Layout',
     component: () => import('@/components/layout/index.vue'),
+    redirect: '/upload',
     children: [
       {
-        path: '/home',
-        name: 'Home',
+        path: '/upload',
+        name: 'Upload',
         meta: {
           keepAlive: true,
+          title: '数据上传',
+          icon: 'cloud_upload',
         },
-        component: () => import('@/views/home/index.vue'),
-      }, 
+        component: () => import('@/views/upload/index.vue'),
+      },
       {
-        path: '/search',
-        name: 'Search',
+        path: '/trends',
+        name: 'Trends',
         meta: {
           keepAlive: true,
+          title: '趋势分析',
+          icon: 'insights',
         },
-        component: () => import('@/views/search/index.vue'),
+        component: () => import('@/views/trends/index.vue'),
+      },
+      {
+        path: '/settings',
+        name: 'Settings',
+        meta: {
+          keepAlive: true,
+          title: '系统设置',
+          icon: 'settings',
+        },
+        component: () => import('@/views/settings/index.vue'),
       },
     ],
   }

@@ -35,9 +35,6 @@
 进入项目根目录，安装前端依赖：
 
 ```bash
-npm install
-# 或者
-yarn install
 pnpm install
 ```
 
@@ -46,9 +43,6 @@ pnpm install
 启动开发服务器，这将同时启动 Vue 前端服务和 Tauri 应用窗口：
 
 ```bash
-npm run tauri dev
-# 或者
-yarn tauri dev
 pnpm tauri dev
 ```
 
@@ -57,8 +51,16 @@ pnpm tauri dev
 构建生产环境应用程序。构建完成后，安装包将位于 `src-tauri/target/release/bundle` 目录下。
 
 ```bash
-npm run tauri build
-# 或者
-yarn tauri build
 pnpm tauri build
 ```
+
+### 5. 打包后运行
+
+```bash
+pnpm tauri run
+``` 
+
+### 6. 开发步骤
+
+首先阅读 [需求文档](plan/requirements.md)，了解需求，及 [架构设计](plan/architecture.md)，然后阅读 [开发 Issue 进度清单](plan/progress_list.md)，最后按照清单中的 Issue 进行开发。
+

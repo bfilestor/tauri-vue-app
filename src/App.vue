@@ -4,15 +4,11 @@
   </el-config-provider>
 </template>
 <script setup>
-  import { ref, onMounted } from 'vue'
+  import { ref } from 'vue'
   import zhCN from 'element-plus/dist/locale/zh-cn'
   const locale = ref(zhCN)
-  onMounted(() => {
-    //禁用页面右键菜单
-    document.addEventListener('contextmenu', e => e.preventDefault())
-  })
 </script>
-<style lang="scss">
+<style>
   html,
   body,
   #app {
@@ -22,7 +18,7 @@
     margin: 0;
   }
   #app {
-    font-family: Avenir, Helvetica, Arial, sans-serif;
+    font-family: 'Noto Sans SC', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color: #2c3e50;

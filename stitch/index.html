@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>检查数据上传与存档 - 个人健康管理系统</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&amp;display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#2b8cee",
+                        "background-light": "#f0f7ff",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        "display": ["Noto Sans SC", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "1rem",
+                        "2xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style type="text/tailwindcss">
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .upload-dashed {
+            background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='24' ry='24' stroke='%232b8ceeff' stroke-width='2' stroke-dasharray='12%2c 12' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
+        }
+    </style>
+</head>
+
+<body
+    class="bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-200 font-display transition-colors duration-300">
+    <div class="flex min-h-screen">
+        <aside
+            class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed h-full z-50">
+            <div class="p-8 flex items-center gap-3">
+                <div
+                    class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/30">
+                    <span class="material-symbols-outlined">health_and_safety</span>
+                </div>
+                <span class="font-bold text-xl tracking-tight text-slate-900 dark:text-white">健康管家</span>
+            </div>
+            <nav class="flex-1 px-4 space-y-2 mt-4">
+                <a class="flex items-center gap-3 px-4 py-3 text-primary bg-primary/5 rounded-xl font-bold"
+                    href="index.html">
+                    <span class="material-symbols-outlined text-2xl">cloud_upload</span>
+                    数据上传
+                </a>
+                <a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-primary hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+                    href="anlysis.html">
+                    <span class="material-symbols-outlined text-2xl">insights</span>
+                    趋势分析
+                </a>
+                <a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-primary hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+                    href="setting.html">
+                    <span class="material-symbols-outlined text-2xl">settings</span>
+                    系统设置
+                </a>
+            </nav>
+            <div class="p-4 border-t border-slate-200 dark:border-slate-800">
+                <div class="flex items-center gap-3 px-2 py-2">
+                    <img alt="管理员头像" class="w-10 h-10 rounded-full object-cover"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGdfewpWmJTmiAe2fw9CgLvWih_Lo9mlUNbDP6jjkiqfyzg9a4GdE_J6QzPgEO7-OvoOhvaowIUkL9iX8zcExRzKmqaISXCG3zBxNyAL1hgGjjNDp6lG5ozzyouklWcn4QoYhFm1ucGGEW077sMEebL0JW5dgwGspJEQuywy44rS2n-Wa8i4ZaquQHxV2Fdzx7EC67kVJ96gfMdFW2lWUoOxrLU3jKxZHOLqxFFQve3R_6L5CI6Ym3KFuzMGJoqoy5Om0JQJHXjg" />
+                    <div>
+                        <p class="text-sm font-bold">系统管理员</p>
+                        <p class="text-xs text-slate-500">超级管理员</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        <main class="flex-1 ml-64 p-10 max-w-6xl">
+            <header class="flex justify-between items-center mb-8">
+                <div>
+                    <h1 class="text-3xl font-bold text-slate-900 dark:text-white">检查数据上传与存档</h1>
+                    <p class="text-slate-500 mt-2">支持多文件上传，通过 AI 进行深度解析与存档管理。</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="relative">
+                        <button
+                            class="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 hover:text-primary transition-colors">
+                            <span class="material-symbols-outlined">notifications</span>
+                        </button>
+                        <span
+                            class="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white dark:border-slate-800 animate-pulse">1</span>
+                    </div>
+                </div>
+            </header>
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+                <div class="lg:col-span-1">
+                    <label class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">选择检查项目</label>
+                    <div class="space-y-2">
+                        <button
+                            class="w-full flex items-center gap-3 px-4 py-3 bg-primary text-white rounded-xl shadow-md transition-all">
+                            <span class="material-symbols-outlined text-xl">bloodtype</span>
+                            <span class="font-medium">血常规</span>
+                        </button>
+                        <button
+                            class="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 hover:border-primary transition-all rounded-xl">
+                            <span class="material-symbols-outlined text-xl">monitor_heart</span>
+                            <span class="font-medium">肝功能</span>
+                        </button>
+                        <button
+                            class="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 hover:border-primary transition-all rounded-xl">
+                            <span class="material-symbols-outlined text-xl">radiology</span>
+                            <span class="font-medium">影像报告</span>
+                        </button>
+                        <button
+                            class="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 hover:border-primary transition-all rounded-xl text-sm italic">
+                            <span class="material-symbols-outlined text-xl">add</span>
+                            <span class="font-medium">其他项目</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="lg:col-span-3">
+                    <div
+                        class="bg-white dark:bg-slate-900 rounded-2xl upload-dashed p-10 text-center group hover:bg-primary/5 transition-all">
+                        <div
+                            class="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 text-primary">
+                            <span class="material-symbols-outlined text-5xl">upload_file</span>
+                        </div>
+                        <h3 class="text-xl font-bold mb-2">多文件拖拽上传</h3>
+                        <p class="text-slate-500 mb-8 max-w-md mx-auto">支持 JPG, PNG, PDF 格式。您可以一次性上传多张化验单照片或电子报告。</p>
+                        <div class="flex justify-center gap-4">
+                            <button
+                                class="px-10 py-3.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all">
+                                浏览文件
+                            </button>
+                        </div>
+                        <div
+                            class="mt-8 max-w-md mx-auto bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-bold text-slate-600">已上传 3 个文件</span>
+                                <span class="text-xs text-primary font-bold">100%</span>
+                            </div>
+                            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                <div class="h-full bg-primary w-full"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end gap-4 mt-6">
+                        <button
+                            class="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 transition-all">
+                            <span class="material-symbols-outlined text-xl">spellcheck</span>
+                            开始 OCR 识别
+                        </button>
+                        <button
+                            class="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all">
+                            <span class="material-symbols-outlined text-xl">psychology</span>
+                            发起 AI 深度分析
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <section>
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-white">
+                        <span class="material-symbols-outlined text-primary">folder_managed</span>
+                        历史存档记录
+                    </h2>
+                    <div class="flex gap-2">
+                        <button
+                            class="px-3 py-1.5 text-sm font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500">按日期</button>
+                        <button
+                            class="px-3 py-1.5 text-sm font-medium bg-primary text-white border border-primary rounded-lg">按项目</button>
+                    </div>
+                </div>
+                <div class="space-y-6">
+                    <div class="space-y-3">
+                        <div
+                            class="flex items-center gap-2 text-sm font-bold text-slate-400 uppercase tracking-wider px-2">
+                            <span class="material-symbols-outlined text-lg">calendar_month</span>
+                            2023年10月
+                        </div>
+                        <div
+                            class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-5 hover:border-primary/30 transition-all group">
+                            <div
+                                class="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                <span class="material-symbols-outlined text-3xl">bloodtype</span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-3 mb-1">
+                                    <h4 class="font-bold text-lg">血常规年度检查</h4>
+                                    <span
+                                        class="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">已
+                                        AI 分析</span>
+                                </div>
+                                <div class="flex items-center gap-4 text-xs text-slate-500">
+                                    <span>10月12日 09:30</span>
+                                    <span>文件: report_v1.pdf, blood_scan.jpg</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button
+                                    class="px-4 py-2 text-sm font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors">查看报告</button>
+                                <button
+                                    class="px-4 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-800 text-slate-600 rounded-lg">导出
+                                    PDF</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <div
+                            class="flex items-center gap-2 text-sm font-bold text-slate-400 uppercase tracking-wider px-2">
+                            <span class="material-symbols-outlined text-lg">calendar_month</span>
+                            2023年08月
+                        </div>
+                        <div
+                            class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-5 hover:border-primary/30 transition-all group">
+                            <div
+                                class="w-14 h-14 bg-orange-50 dark:bg-orange-900/20 rounded-xl flex items-center justify-center text-orange-500 group-hover:scale-110 transition-transform">
+                                <span class="material-symbols-outlined text-3xl">monitor_heart</span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-3 mb-1">
+                                    <h4 class="font-bold text-lg">肝功能常规复查</h4>
+                                    <span
+                                        class="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] px-2 py-0.5 rounded-full font-bold">待识别完成</span>
+                                </div>
+                                <div class="flex items-center gap-4 text-xs text-slate-500">
+                                    <span>08月24日 14:15</span>
+                                    <span>文件: liver_function.png</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button
+                                    class="px-4 py-2 text-sm font-bold text-white bg-primary rounded-lg shadow-sm">立即处理</button>
+                                <button class="p-2 text-slate-400 hover:text-rose-500 transition-colors">
+                                    <span class="material-symbols-outlined">delete</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-10 py-8 border-t border-slate-100 dark:border-slate-800 text-center">
+                    <button
+                        class="text-slate-400 hover:text-primary font-bold text-sm flex items-center gap-2 mx-auto transition-all">
+                        加载更多历史记录
+                        <span class="material-symbols-outlined">keyboard_double_arrow_down</span>
+                    </button>
+                </div>
+            </section>
+        </main>
+        <aside
+            class="w-80 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-8 hidden xl:block">
+            <div class="bg-primary/5 rounded-2xl p-6 border border-primary/10">
+                <h3 class="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-primary">auto_awesome</span>
+                    AI 状态助手
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-start gap-3">
+                        <div
+                            class="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-white shrink-0 mt-0.5">
+                            <span class="material-symbols-outlined text-xs">check</span>
+                        </div>
+                        <p class="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                            <span class="font-bold text-slate-800 dark:text-slate-200">OCR 识别已完成</span><br />
+                            已成功从 3 张图片中提取出 24 项生理指标数据。
+                        </p>
+                    </div>
+                    <div class="flex items-start gap-3 opacity-50">
+                        <div
+                            class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">
+                            <span class="material-symbols-outlined text-xs">pending</span>
+                        </div>
+                        <p class="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                            <span class="font-bold">等待 AI 深度分析</span><br />
+                            分析将根据历史数据为您提供健康趋势预警。
+                        </p>
+                    </div>
+                </div>
+                <button
+                    class="w-full mt-6 py-3 bg-white dark:bg-slate-800 border border-primary/20 text-primary text-xs font-bold rounded-xl hover:bg-primary hover:text-white transition-all">
+                    查看实时进度详情
+                </button>
+            </div>
+            <div class="mt-8">
+                <h4 class="text-sm font-bold text-slate-900 dark:text-white mb-4 px-2">上传小贴士</h4>
+                <div class="space-y-3">
+                    <div
+                        class="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                        <p class="text-[11px] leading-relaxed text-slate-500">
+                            拍摄时请确保化验单平整，光线均匀，避免文字模糊或反光。
+                        </p>
+                    </div>
+                    <div
+                        class="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                        <p class="text-[11px] leading-relaxed text-slate-500">
+                            支持将同一日期的多张检查单放入同一个文件夹进行“项目化”存档。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+</body>
+
+</html>
