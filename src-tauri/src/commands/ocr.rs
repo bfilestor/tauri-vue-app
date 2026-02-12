@@ -100,9 +100,7 @@ pub async fn start_ocr(
                 [],
                 |row| row.get(0),
             )
-            .unwrap_or_else(|_| {
-                "请识别图片中的医疗检查报告，提取所有检查指标的名称、数值、单位和参考范围。请以严格的JSON数组格式返回，每个元素包含: name(指标名称)、value(数值)、unit(单位)、reference_range(参考范围)、is_abnormal(是否异常,布尔值)。只返回JSON数组，不要返回其他内容。".to_string()
-            });
+            .unwrap_or_else(|_| "请识别图片中的医疗检查报告，提取所有检查指标。请严格按照以下JSON格式返回数组：[{\"name\":\"指标名称\",\"value\":\"数值\",\"unit\":\"单位\",\"reference_range\":\"参考范围\",\"status\":\"正常/异常\"}]。注意：reference_range字段请统一使用\"reference_range\"作为键名；status字段请依据数值和参考范围判断，仅返回\"正常\"或\"异常\"；如果图片中没有明确状态标记，请根据数值自行判断。只返回JSON数组，不要返回其他内容。".to_string());
 
         // 加载所有项目的指标映射（用于匹配 indicator_values）
         let mut ind_stmt = conn
@@ -251,6 +249,8 @@ pub async fn start_ocr(
                 .as_str()
                 .unwrap_or("")
                 .to_string();
+            
+            log::info!("OCR AI Raw Response (File: {}): {}", filename, content);
 
             // 尝试解析 JSON 数组
             let parsed_items = extract_json_array(&content);
@@ -263,10 +263,20 @@ pub async fn start_ocr(
             // 获取数据库连接并保存
             if let Some(db_state) = app.try_state::<Database>() {
                 if let Ok(conn) = db_state.conn.lock() {
-                    let _: Result<usize, _> = conn.execute(
+                     let _: Result<usize, _> = conn.execute(
                         "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'success', '', ?8)",
                         rusqlite::params![ocr_id, file_id, record_id_clone, project_id, checkup_date, content, parsed_items_str, now],
+                    );
+
+                    // 清理旧记录
+                    let _: Result<usize, _> = conn.execute(
+                        "DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1 AND id != ?2)",
+                        [&file_id, &ocr_id], 
+                    );
+                    let _: Result<usize, _> = conn.execute(
+                        "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
+                        [&file_id, &ocr_id], 
                     );
 
                     // 将解析出的指标值写入 indicator_values
@@ -319,6 +329,234 @@ pub async fn start_ocr(
     Ok(record_id)
 }
 
+/// 重试单个 OCR 任务 (创建新记录，保留历史)
+#[tauri::command]
+pub async fn retry_ocr(
+    ocr_id: String,
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Database>,
+    app_dir: tauri::State<'_, super::AppDir>,
+) -> Result<String, String> {
+    use tauri::Emitter;
+
+    // 1. 查询必要信息
+    let (file_info, record_id, checkup_date, config, model, ocr_prompt, indicators_map) = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+        // 查询 OCR 记录关联的信息
+        let (file_id, record_id, project_id) = conn.query_row(
+            "SELECT file_id, record_id, project_id FROM ocr_results WHERE id = ?1",
+            [&ocr_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+        ).map_err(|e| format!("OCR记录不存在: {}", e))?;
+
+        // 查询日期
+        let checkup_date: String = conn.query_row(
+            "SELECT checkup_date FROM checkup_records WHERE id = ?1",
+            [&record_id],
+            |row| row.get(0),
+        ).unwrap_or_default();
+
+        // 查询文件信息
+        let (filename, stored_path, mime_type, project_name) = conn.query_row(
+            "SELECT f.original_filename, f.stored_path, f.mime_type, p.name
+             FROM checkup_files f
+             LEFT JOIN checkup_projects p ON f.project_id = p.id
+             WHERE f.id = ?1",
+            [&file_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3).unwrap_or_default(),
+            ))
+        ).map_err(|e| format!("文件不存在: {}", e))?;
+
+        let config = http_client::load_ai_config(&conn)?;
+        let model = http_client::get_default_model(&conn);
+        let ocr_prompt: String = conn.query_row(
+            "SELECT config_value FROM system_config WHERE config_key = 'ocr_prompt_template'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or_else(|_| "请识别图片中的医疗检查报告...".to_string()); // Default shortened for brevity
+
+        // 加载指标映射
+        let mut ind_stmt = conn.prepare("SELECT id, project_id, name FROM indicators").unwrap();
+        let indicators: Vec<(String, String, String)> = ind_stmt.query_map([], |row| {
+             Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        }).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+
+        (
+            (file_id, project_id, filename, stored_path, mime_type, project_name),
+            record_id,
+            checkup_date,
+            config,
+            model,
+            ocr_prompt,
+            indicators
+        )
+    };
+
+    let (file_id, project_id, filename, stored_path, mime_type, _project_name) = file_info;
+    let new_ocr_id = uuid::Uuid::new_v4().to_string(); // 使用新 ID
+    let ocr_id_clone = new_ocr_id.clone(); // 这里的变量名保持一致方便后面闭包使用
+    let record_id_clone = record_id.clone();
+    let app_dir_path = app_dir.0.clone();
+
+    // 插入新记录 (状态 processing)
+    if let Some(db_state) = app.try_state::<Database>() {
+        if let Ok(conn) = db_state.conn.lock() {
+             let now = chrono::Local::now().to_rfc3339();
+             let _: Result<usize, _> = conn.execute(
+                 "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
+                  VALUES (?1, ?2, ?3, ?4, ?5, '', '[]', 'processing', '', ?6)",
+                 rusqlite::params![ocr_id_clone, file_id, record_id, project_id, checkup_date, now],
+             );
+
+             // 清理该文件的旧 OCR 记录 (只保留当前新创建的)
+             // 1. 删除旧记录关联的指标值
+             let _: Result<usize, _> = conn.execute(
+                 "DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1 AND id != ?2)",
+                 [&file_id, &ocr_id_clone], 
+             );
+             // 2. 删除旧 OCR 记录
+             let _: Result<usize, _> = conn.execute(
+                 "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
+                 [&file_id, &ocr_id_clone], 
+             );
+        }
+    }
+    
+    // 发送开始事件
+    app.emit("ocr_progress", OcrProgress {
+        record_id: record_id.clone(),
+        total: 1,
+        completed: 0,
+        current_file: filename.clone(),
+        status: "processing".to_string(),
+    }).ok();
+
+    tokio::spawn(async move {
+        let client = match http_client::build_client(&config) {
+            Ok(c) => c,
+            Err(e) => {
+                update_ocr_failed(&app, &ocr_id_clone, &format!("创建客户端失败: {}", e));
+                return;
+            }
+        };
+
+        // 读取文件
+        let full_path = app_dir_path.join(stored_path);
+        let file_bytes = match std::fs::read(&full_path) {
+            Ok(b) => b,
+            Err(e) => {
+                update_ocr_failed(&app, &ocr_id_clone, &format!("读取文件失败: {}", e));
+                return;
+            }
+        };
+
+        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &file_bytes);
+        let image_data_url = format!("data:{};base64,{}", mime_type, b64);
+
+        let request_body = serde_json::json!({
+            "model": model,
+            "messages": [
+                { "role": "user", "content": [
+                    { "type": "text", "text": ocr_prompt },
+                    { "type": "image_url", "image_url": { "url": image_data_url } }
+                ]}
+            ],
+            "max_tokens": 4096,
+        });
+
+        let response = match client.post(&config.api_url)
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await 
+        {
+            Ok(r) => r,
+            Err(e) => {
+                update_ocr_failed(&app, &ocr_id_clone, &format!("请求失败: {}", e));
+                return;
+            }
+        };
+
+        if !response.status().is_success() {
+             let status = response.status();
+             let body = response.text().await.unwrap_or_default();
+             update_ocr_failed(&app, &ocr_id_clone, &format!("API错误({}): {}", status, body));
+             return;
+        }
+
+        let resp_json: serde_json::Value = match response.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                update_ocr_failed(&app, &ocr_id_clone, &format!("解析响应失败: {}", e));
+                return;
+            }
+        };
+
+        let content = resp_json["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
+        log::info!("Retry OCR AI Raw Response: {}", content);
+        let parsed_items = extract_json_array(&content);
+        let parsed_items_str = serde_json::to_string(&parsed_items).unwrap_or("[]".to_string());
+        
+        // 更新数据库
+        if let Some(db_state) = app.try_state::<Database>() {
+            if let Ok(conn) = db_state.conn.lock() {
+                let now = chrono::Local::now().to_rfc3339();
+                
+                // 更新 ocr_results
+                let _: Result<usize, _> = conn.execute(
+                    "UPDATE ocr_results SET status = 'success', raw_json = ?1, parsed_items = ?2, error_message = '', created_at = ?3 WHERE id = ?4",
+                    rusqlite::params![content, parsed_items_str, now, ocr_id_clone],
+                );
+                
+                // 写入 indicator_values (新记录不需要删除旧的)
+                
+                for item in &parsed_items {
+                     let indicator_match = indicators_map.iter().find(|(_, pid, name)| {
+                         pid == &project_id && name_fuzzy_match(name, &item.name)
+                     });
+                     
+                     if let Some((indicator_id, _, _)) = indicator_match {
+                         let value: Option<f64> = item.value.parse().ok();
+                         let iv_id = uuid::Uuid::new_v4().to_string();
+                         let _: Result<usize, _> = conn.execute(
+                             "INSERT INTO indicator_values (id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
+                              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                             rusqlite::params![iv_id, ocr_id_clone, record_id_clone, project_id, indicator_id, checkup_date, value, item.value, item.is_abnormal as i32, now],
+                         );
+                     }
+                }
+            }
+        }
+        
+        // 发送完成事件
+        app.emit("ocr_complete", serde_json::json!({
+            "record_id": record_id_clone,
+            "total": 1,
+            "success": 1,
+            "errors": Vec::<String>::new()
+        })).ok();
+    });
+
+    Ok("Retry started".to_string())
+}
+
+fn update_ocr_failed(app: &tauri::AppHandle, ocr_id: &str, error: &str) {
+    if let Some(db_state) = app.try_state::<Database>() {
+        if let Ok(conn) = db_state.conn.lock() {
+             let _: Result<usize, _> = conn.execute(
+                 "UPDATE ocr_results SET status = 'failed', error_message = ?1 WHERE id = ?2",
+                 [error, ocr_id],
+             );
+        }
+    }
+}
+
 /// 保存 OCR 错误结果
 fn save_ocr_error(
     app: &tauri::AppHandle,
@@ -337,8 +575,84 @@ fn save_ocr_error(
                  VALUES (?1, ?2, ?3, ?4, ?5, '', '[]', 'failed', ?6, ?7)",
                 rusqlite::params![ocr_id, file_id, record_id, project_id, checkup_date, error_msg, now],
             );
+
+            // 清理旧记录
+            let _: Result<usize, _> = conn.execute(
+                "DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1 AND id != ?2)",
+                [file_id, &ocr_id], 
+            );
+            let _: Result<usize, _> = conn.execute(
+                "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
+                [file_id, &ocr_id], 
+            );
         }
     }
+}
+
+/// 更新单个 OCR 指标项
+#[tauri::command]
+pub fn update_ocr_item(
+    ocr_id: String,
+    index: usize,
+    item: OcrParsedItem,
+    db: tauri::State<Database>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // 1. 获取当前数据
+    let (parsed_items_str, project_id, record_id, checkup_date): (String, String, String, String) = conn.query_row(
+        "SELECT parsed_items, project_id, record_id, checkup_date FROM ocr_results WHERE id = ?1",
+        [&ocr_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    ).map_err(|e| format!("OCR记录不存在: {}", e))?;
+
+    let mut parsed_items: Vec<OcrParsedItem> = serde_json::from_str(&parsed_items_str)
+        .map_err(|e| format!("解析JSON失败: {}", e))?;
+
+    if index >= parsed_items.len() {
+        return Err("索引超出范围".into());
+    }
+
+    // 2. 更新数据
+    parsed_items[index] = item;
+    let new_json = serde_json::to_string(&parsed_items).unwrap();
+
+    // 3. 更新 ocr_results
+    let now = chrono::Local::now().to_rfc3339();
+    conn.execute(
+        "UPDATE ocr_results SET parsed_items = ?1 WHERE id = ?2",
+        [&new_json, &ocr_id],
+    ).map_err(|e| format!("更新失败: {}", e))?;
+
+    // 4. 重新生成 indicator_values
+    // 加载指标映射
+    let mut ind_stmt = conn.prepare("SELECT id, project_id, name FROM indicators").unwrap();
+    let indicators_map: Vec<(String, String, String)> = ind_stmt.query_map([], |row| {
+             Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    }).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+
+    // 先删除旧的
+    conn.execute("DELETE FROM indicator_values WHERE ocr_result_id = ?1", [&ocr_id])
+        .map_err(|e| format!("清理旧数据失败: {}", e))?;
+
+    // 写入新的
+    for item in &parsed_items {
+         let indicator_match = indicators_map.iter().find(|(_, pid, name)| {
+             pid == &project_id && name_fuzzy_match(name, &item.name)
+         });
+         
+         if let Some((indicator_id, _, _)) = indicator_match {
+             let value: Option<f64> = item.value.parse().ok();
+             let iv_id = uuid::Uuid::new_v4().to_string();
+             let _: Result<usize, _> = conn.execute(
+                 "INSERT INTO indicator_values (id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
+                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 rusqlite::params![iv_id, ocr_id, record_id, project_id, indicator_id, checkup_date, value, item.value, item.is_abnormal as i32, now],
+             );
+         }
+    }
+
+    Ok(())
 }
 
 /// 查询 OCR 状态
@@ -475,8 +789,36 @@ fn extract_json_array(content: &str) -> Vec<OcrParsedItem> {
                                 _ => None,
                             }).unwrap_or_default(),
                             unit: v.get("unit").or(v.get("单位")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            reference_range: v.get("reference_range").or(v.get("参考范围")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            is_abnormal: v.get("is_abnormal").or(v.get("是否异常")).and_then(|v| v.as_bool()).unwrap_or(false),
+                            reference_range: v.get("reference_range")
+                                .or(v.get("参考范围"))
+                                .or(v.get("range"))
+                                .or(v.get("参考值"))
+                                .or(v.get("reference"))
+                                .map(|v| match v {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Array(a) => a.iter()
+                                        .map(|x| x.as_str().unwrap_or("").to_string())
+                                        .collect::<Vec<_>>().join("-"),
+                                    _ => "".to_string(),
+                                })
+                                .unwrap_or("".to_string()),
+                            is_abnormal: v.get("is_abnormal")
+                                .or(v.get("是否异常"))
+                                .or(v.get("abnormal"))
+                                .or(v.get("status"))
+                                .or(v.get("状态"))
+                                .map(|val| {
+                                    if let Some(b) = val.as_bool() {
+                                        return b;
+                                    }
+                                    if let Some(s) = val.as_str() {
+                                        let s = s.trim().to_lowercase();
+                                        return s == "true" || s == "yes" || s == "1" || s == "异常" || s == "是" || s == "high" || s == "low" || s.contains("↑") || s.contains("↓") || s.contains("+");
+                                    }
+                                    false
+                                })
+                                .unwrap_or(false),
                         })
                     })
                     .collect();

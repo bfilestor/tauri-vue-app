@@ -167,6 +167,48 @@
       </section>
     </div>
 
+    <!-- 数据重置与维护 -->
+    <section class="mt-8">
+      <el-card shadow="never" class="!rounded-xl !border-slate-200 border-red-50">
+          <template #header>
+            <div class="flex items-center gap-3 text-red-600">
+              <span class="material-symbols-outlined">delete_forever</span>
+              <span class="font-bold text-lg">数据重置与维护</span>
+            </div>
+          </template>
+          
+          <div class="grid md:grid-cols-2 gap-12 px-2">
+            <div>
+                <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                  <span class="material-symbols-outlined text-amber-500">history</span>
+                  重置检查数据
+                </h4>
+                <p class="text-sm text-slate-500 mb-6 leading-relaxed">
+                  将删除所有历史上传的检查报告图片（仅限程序目录下的 pictures 文件夹）、OCR 识别记录、AI 分析报告以及趋势数据。
+                  <br><span class="text-xs text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded mt-1 inline-block">警告：此操作不可恢复！</span>
+                </p>
+                <el-button type="danger" plain @click="handleResetCheckupData">
+                  重置检查数据
+                </el-button>
+            </div>
+
+            <div>
+                <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                  <span class="material-symbols-outlined text-red-600">restart_alt</span>
+                  重置全部数据 (恢复出厂)
+                </h4>
+                <p class="text-sm text-slate-500 mb-6 leading-relaxed">
+                  除了清除所有检查数据外，还会删除自定义的检查项目和指标设置，将系统恢复到初始状态。
+                  <br><span class="text-xs text-red-600 font-bold bg-red-100 px-2 py-0.5 rounded mt-1 inline-block">严重警告：所有数据将永久丢失！</span>
+                </p>
+                <el-button type="danger" @click="handleResetAllData">
+                  重置全部数据 (慎用)
+                </el-button>
+            </div>
+          </div>
+      </el-card>
+    </section>
+
     <!-- 新增/编辑项目弹窗 -->
     <el-dialog v-model="showProjectDialog" :title="editingProject ? '编辑检查项目' : '新增检查项目'" width="420px" :close-on-click-modal="false">
       <el-form :model="projectForm" label-position="top">
@@ -299,7 +341,7 @@ const loadAiConfig = async () => {
 
     const ocrTpl = await invoke('get_config', { key: 'ocr_prompt_template' })
     const aiTpl = await invoke('get_config', { key: 'ai_analysis_prompt_template' })
-    ocrPrompt.value = ocrTpl || '请识别图片中的医疗检查报告，提取所有检查指标的名称、数值、单位和参考范围，以JSON格式返回。'
+    ocrPrompt.value = ocrTpl || '请识别图片中的医疗检查报告，提取所有检查指标的名称、数值、单位和参考范围，请严格按照以下JSON格式返回: [ { "name": "指标名称", "value": "数值", "unit": "单位", "reference_range": "参考范围", "status": "正常/异常" } ] 注意：reference_range 必须是字符串，表示参考范围（如 "3.5-5.5"）。2，status必须是 "正常" 或 "异常"。3，只返回JSON数组，不要包含markdown代码块或其他文字。'
     aiPrompt.value = aiTpl || '请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。'
   } catch (e) {
     console.error('加载配置失败:', e)
@@ -555,6 +597,51 @@ const handleDeleteIndicator = async (row) => {
   } catch (e) {
     if (e !== 'cancel') ElMessage.error('' + e)
   }
+}
+
+// ===== 数据重置 =====
+const handleResetCheckupData = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清空所有检查记录、上传的图片和分析数据吗？\n操作将删除 pictures 文件夹下的所有内容，且不可恢复！',
+      '确认重置检查数据',
+      {
+        confirmButtonText: '确定重置',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+    
+    await invoke('reset_checkup_data')
+    ElMessage.success('检查数据已成功重置')
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('重置失败: ' + e)
+  }
+}
+
+const handleResetAllData = async () => {
+    try {
+        const { value } = await ElMessageBox.prompt(
+            '此操作将删除所有数据（包括检查记录和项目设置、指标定义），系统将恢复到初始状态。\n\n如果要继续，请输入 "RESET" 以确认操作：',
+            '严重警告：重置全部数据',
+            {
+                confirmButtonText: '确认重置所有',
+                cancelButtonText: '取消',
+                type: 'error',
+                inputPattern: /^RESET$/,
+                inputErrorMessage: '输入内容不正确，请输入 RESET',
+                confirmButtonClass: 'el-button--danger'
+            }
+        )
+        
+        await invoke('reset_all_data')
+        ElMessage.success('系统已成功重置为初始状态')
+        // 刷新项目列表
+        await loadProjects()
+    } catch (e) {
+        if (e !== 'cancel') ElMessage.warning('操作已取消')
+    }
 }
 
 // ===== 初始化 =====

@@ -6,6 +6,7 @@ pub mod file;
 pub mod ocr;
 pub mod ai;
 pub mod trend;
+pub mod system;
 
 use std::path::PathBuf;
 

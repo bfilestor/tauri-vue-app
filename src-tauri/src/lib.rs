@@ -50,12 +50,16 @@ pub fn run() {
             commands::file::read_file_base64,
             commands::file::delete_file,
             commands::ocr::start_ocr,
+            commands::ocr::retry_ocr,
             commands::ocr::get_ocr_status,
             commands::ocr::get_ocr_results,
+            commands::ocr::update_ocr_item,
             commands::ai::start_ai_analysis,
             commands::ai::get_ai_analysis,
             commands::trend::get_project_trends,
             commands::trend::get_all_trends,
+            commands::system::reset_checkup_data,
+            commands::system::reset_all_data,
         ])
         .setup(|app| {
             // 初始化日志（仅调试模式）

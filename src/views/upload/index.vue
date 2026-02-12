@@ -250,15 +250,36 @@
       </div>
       <div v-else class="space-y-4">
         <div v-for="ocr in ocrResults" :key="ocr.id" class="border border-slate-200 rounded-lg p-4">
-          <div class="flex items-center justify-between mb-3">
-            <el-tag :type="ocr.status === 'success' ? 'success' : 'danger'" size="small">
-              {{ ocr.status === 'success' ? '识别成功' : '识别失败' }}
-            </el-tag>
-            <span class="text-xs text-slate-400">{{ ocr.created_at }}</span>
+          <div class="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
+            <div class="flex items-center gap-3">
+              <el-tag :type="ocr.status === 'success' ? 'success' : (ocr.status === 'processing' ? 'warning' : 'danger')" size="small">
+                {{ ocr.status === 'success' ? '识别成功' : (ocr.status === 'processing' ? '识别中' : '识别失败') }}
+              </el-tag>
+              <span class="text-xs text-slate-400">{{ formatTime(ocr.created_at) }}</span>
+            </div>
+            
+            <el-button 
+               type="primary" 
+               link 
+               size="small"
+               :loading="ocr.status === 'processing'"
+               @click="handleRetryOcr(ocr)"
+               :disabled="ocr.status === 'processing'"
+            >
+               <span v-if="ocr.status !== 'processing'" class="material-symbols-outlined text-base mr-1">refresh</span>
+               重新识别
+            </el-button>
           </div>
+
           <div v-if="ocr.status === 'success'">
-            <el-table :data="parseOcrItems(ocr.parsed_items)" stripe size="small" max-height="300">
-              <el-table-column prop="name" label="指标名称" min-width="150" />
+            <el-table 
+              :data="parseOcrItems(ocr.parsed_items)" 
+              stripe 
+              size="small" 
+              max-height="300"
+              @row-dblclick="(row) => handleEditOcrItem(row, ocr)"
+            >
+              <el-table-column prop="name" label="指标名称" min-width="150" show-overflow-tooltip />
               <el-table-column prop="value" label="数值" width="100" />
               <el-table-column prop="unit" label="单位" width="100" />
               <el-table-column prop="reference_range" label="参考范围" width="120" />
@@ -270,11 +291,50 @@
               </el-table-column>
             </el-table>
           </div>
-          <div v-else class="text-red-500 text-sm">
-            {{ ocr.error_message }}
+          
+          <div v-else-if="ocr.status === 'processing'" class="py-12 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-lg">
+             <el-icon class="is-loading text-2xl mb-2 text-blue-500"><Loading /></el-icon>
+             <div class="text-sm">正在重新识别...</div>
+          </div>
+
+          <div v-else class="text-red-500 text-sm mt-1">
+             <div class="p-3 bg-red-50 rounded border border-red-100 flex items-start gap-2">
+                 <span class="material-symbols-outlined text-base mt-0.5 text-red-500">error</span>
+                 <span class="text-slate-700">{{ ocr.error_message || '未知错误' }}</span>
+             </div>
           </div>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 编辑指标弹窗 -->
+    <el-dialog v-model="showEditDialog" title="编辑指标信息" width="400px" append-to-body>
+      <el-form :model="editForm" label-position="top">
+        <el-form-item label="指标名称">
+          <el-input v-model="editForm.name" />
+        </el-form-item>
+        <div class="grid grid-cols-2 gap-4">
+          <el-form-item label="数值">
+            <el-input v-model="editForm.value" />
+          </el-form-item>
+          <el-form-item label="单位">
+            <el-input v-model="editForm.unit" />
+          </el-form-item>
+        </div>
+        <el-form-item label="参考范围">
+          <el-input v-model="editForm.reference_range" />
+        </el-form-item>
+        <el-form-item label="状态">
+           <el-radio-group v-model="editForm.is_abnormal">
+             <el-radio :label="false">正常</el-radio>
+             <el-radio :label="true"><span class="text-red-500">异常</span></el-radio>
+           </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveOcrItem" :loading="savingOcrItem">保存修改</el-button>
+      </template>
     </el-dialog>
 
     <!-- AI 分析结果弹窗 -->
@@ -586,8 +646,10 @@ const renderedAiContent = computed(() => renderMarkdown(aiStreamContent.value))
 // ===== OCR 结果查看 =====
 const showOcrDialog = ref(false)
 const ocrResults = ref([])
+const currentViewRecord = ref(null)
 
 const viewOcrResults = async (record) => {
+  currentViewRecord.value = record
   try {
     ocrResults.value = await invoke('get_ocr_results', { recordId: record.id })
     showOcrDialog.value = true
@@ -602,6 +664,75 @@ const parseOcrItems = (jsonStr) => {
   } catch {
     return []
   }
+}
+
+const handleRetryOcr = async (ocrItem) => {
+    ocrItem.status = 'processing'
+    ocrItem.error_message = '正在请求重试...'
+    try {
+        await invoke('retry_ocr', { ocrId: ocrItem.id })
+    } catch (e) {
+        ocrItem.status = 'failed'
+        ocrItem.error_message = '重试启动失败: ' + e
+    }
+}
+
+// ===== 编辑 OCR 指标 =====
+const showEditDialog = ref(false)
+const savingOcrItem = ref(false)
+const editingOcrId = ref('')
+const editingIndex = ref(-1)
+const editForm = reactive({
+    name: '',
+    value: '',
+    unit: '',
+    reference_range: '',
+    is_abnormal: false
+})
+
+const handleEditOcrItem = (row, ocr) => {
+    const list = parseOcrItems(ocr.parsed_items)
+    // 简单匹配定位索引 (假设内容组合唯一，或者匹配第一个)
+    const index = list.findIndex(item => 
+        item.name === row.name && 
+        item.value === row.value && 
+        item.unit === row.unit &&
+        item.reference_range === row.reference_range
+    )
+    
+    if (index === -1) return
+
+    editingOcrId.value = ocr.id
+    editingIndex.value = index
+    Object.assign(editForm, row)
+    showEditDialog.value = true
+}
+
+const saveOcrItem = async () => {
+    savingOcrItem.value = true
+    try {
+        await invoke('update_ocr_item', {
+            ocrId: editingOcrId.value,
+            index: editingIndex.value,
+            item: {
+                name: editForm.name,
+                value: editForm.value,
+                unit: editForm.unit,
+                reference_range: editForm.reference_range,
+                is_abnormal: editForm.is_abnormal
+            }
+        })
+        ElMessage.success('更新成功')
+        showEditDialog.value = false
+        // 刷新列表
+        if (currentViewRecord.value) {
+            await viewOcrResults(currentViewRecord.value)
+        }
+    } catch (e) {
+        ElMessage.error('更新失败: ' + e)
+    } finally {
+        savingOcrItem.value = false
+    }
 }
 
 // ===== AI 分析结果查看 =====
@@ -657,6 +788,10 @@ const setupEventListeners = async () => {
     }
 
     loadRecords()
+    // 如果正在查看 OCR 结果，刷新列表
+    if (showOcrDialog.value && currentViewRecord.value) {
+      viewOcrResults(currentViewRecord.value)
+    }
   })
 
   // OCR 错误

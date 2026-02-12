@@ -18,7 +18,7 @@
         "width": 1000,
         "center": true,
         "resizable": true,
-        "title": "Tauri Vue App",
+        "title": "Health Monitor",
         "decorations": false
       }
     ],
