@@ -30,7 +30,7 @@
 
       <!-- 底部用户信息 -->
       <div class="p-4 border-t border-slate-200">
-        <div class="flex items-center gap-3 px-2 py-2">
+        <div class="flex items-center gap-3 px-2 py-2 mb-2">
           <div class="w-10 h-10 rounded-full bg-[#2b8cee]/10 flex items-center justify-center text-[#2b8cee]">
             <span class="material-symbols-outlined">person</span>
           </div>
@@ -39,12 +39,19 @@
             <p class="text-xs text-slate-400">本地管理</p>
           </div>
         </div>
+        <button
+          @click="handleQuit"
+          class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+        >
+          <span class="material-symbols-outlined text-xl">logout</span>
+          退出程序
+        </button>
       </div>
     </aside>
 
     <!-- 主内容区 -->
-    <main class="flex-1 ml-64 overflow-y-auto">
-      <div class="p-8 max-w-6xl">
+    <main class="flex-1 ml-64 overflow-y-auto w-full">
+      <div class="p-8 max-w-6xl mx-auto">
         <router-view v-slot="{ Component }">
           <keep-alive>
             <component
@@ -66,6 +73,8 @@
 
 <script setup>
 import { useRoute } from 'vue-router'
+import { invoke } from '@tauri-apps/api/core'
+import { ElMessageBox } from 'element-plus'
 
 const route = useRoute()
 
@@ -77,6 +86,23 @@ const menuItems = [
 
 const isActive = (path) => {
   return route.path === path
+}
+
+const handleQuit = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要退出程序吗？',
+      '退出确认',
+      {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    await invoke('quit')
+  } catch (e) {
+    // 用户取消退出
+  }
 }
 </script>
 

@@ -54,13 +54,7 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-### 5. 打包后运行
-
-```bash
-pnpm tauri run
-``` 
-
-### 6. 开发步骤
+### 5. 开发步骤
 
 首先阅读 [需求文档](plan/requirements.md)，了解需求，及 [架构设计](plan/architecture.md)，然后阅读 [开发 Issue 进度清单](plan/progress_list.md)，最后按照清单中的 Issue 进行开发。
 
