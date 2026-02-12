@@ -149,7 +149,7 @@
         >
           <span v-if="loadingOcr" class="material-symbols-outlined text-xl animate-spin">refresh</span>
           <span v-else class="material-symbols-outlined text-xl">spellcheck</span>
-          {{ loadingOcr ? '识别中...' : '开始 OCR 识别' }}
+          {{ loadingOcr ? '识别中...' : 'OCR识别' }}
         </button>
         <button
           @click="startAi"
@@ -158,15 +158,15 @@
         >
           <span v-if="loadingAi" class="material-symbols-outlined text-xl animate-spin">psychology</span>
           <span v-else class="material-symbols-outlined text-xl">psychology</span>
-          {{ loadingAi ? '分析中...' : '发起 AI 深度分析' }}
+          {{ loadingAi ? '分析中...' : 'AI深度分析' }}
         </button>
         
         <!-- 结果按钮 -->
           <button v-if="hasOcrResult" @click="showOcrResult = true" class="px-4 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50">
-            查看识别结果
+            识别结果
           </button>
           <button v-if="hasAiResult" @click="showAiResult = true" class="px-4 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50">
-            查看分析报告
+            分析报告
           </button>
       </div>
 
@@ -236,7 +236,7 @@
                 <span class="material-symbols-outlined text-xs">{{ hasAiResult ? 'check' : 'psychology' }}</span>
              </div>
              <div>
-                <p class="text-sm font-bold text-slate-800 mb-1">AI 深度分析</p>
+                <p class="text-sm font-bold text-slate-800 mb-1">AI深度分析</p>
                 <p v-if="loadingAi" class="text-xs text-blue-600 font-medium animate-pulse">
                    正在分析健康趋势...
                 </p>
