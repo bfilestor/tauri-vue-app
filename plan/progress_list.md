@@ -83,13 +83,25 @@
 
 ---
 
+## Epic 6：AI 问答模块
+
+| Issue | 描述 | 状态 | 依赖 | 测试 | 备注 |
+|-------|------|------|------|------|------|
+| ISS-036 | [前端] AI 问答路由与入口 | Done | - | Passed | /aiqa 路由 + 侧边栏 Material Symbol |
+| ISS-037 | [后端] 历史分析查询与更新 | Done | ISS-025 | Passed | JOIN checkup_records + content update |
+| ISS-038 | [前端] 左侧历史分析时间轴 | Done | ISS-037 | Passed | 展开/编辑/引用功能 |
+| ISS-039 | [后端] 问答系统后端（DB+Command） | Done | ISS-006 | Passed | chat_logs 表 + 流式 chat_with_ai |
+| ISS-040 | [前端] 问答对话框 UI | Done | ISS-039 | Passed | 流式渲染 + 历史记录 + 清空/复制 |
+
+---
+
 ## 汇总统计
 
 | 状态 | 数量 |
 |------|------|
-| Todo | 0 |
+| Todo | 5 |
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
 | Done | 33 |
-| **合计** | **33** |
+| **合计** | **38** |

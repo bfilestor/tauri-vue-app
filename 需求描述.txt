@@ -1,0 +1,11 @@
+新增一个需求
+
+现在AI设置只支持OPENAI
+需要仿照cherry studio， 
+
+支持多家API 接入 : 智谱AI GLM-4.5， 文心一言4.0， 豆包 ，
+Claude 4.5，Gemini 3 Pro，DeepSeek V3.2，NewAPI 
+
+仔细分析上述需求，并给出详细的实现方案，补充到plan/requirements.md中，
+并采用 Epic → Feature → Story → Issue 层级划分，标注依赖关系与优先级，详细划分issue，
+补充plan/todo-list.md 和plan/progress_list.md,完成上述工作后，开始编码

@@ -17,7 +17,22 @@
 
 ## 能力记录
 
-### 2026-02-11
+### 2026-02-14
+
+| 能力名 | 归属模块 | 关联 Issue | 涉及文件 | 备注 |
+|--------|----------|-----------|----------|------|
+| AI 问答完整模块 | AI 问答 | ISS-036, ISS-038, ISS-040 | `src/views/aiqa/index.vue` | 左右分栏布局 + 历史时间轴 + 流式对话框 |
+| AI 历史分析查询与更新 | AI 问答 | ISS-037 | `src-tauri/src/commands/ai.rs` | 历史记录按时间倒序 + 内容编辑保存 |
+| 聊天记录持久化 | AI 问答 | ISS-039 | `src-tauri/src/db.rs`, `src-tauri/src/commands/ai.rs` | chat_logs 表 + 历史消息加载 |
+| 全局通知中心 | 通知与优化 | ISS-032 | `src/App.vue` | 监听 Tauri 事件弹出 ElNotification |
+| 趋势分析图表 | 趋势分析 | ISS-030, ISS-031 | `src/views/trends/index.vue` | ECharts 折线/柱状图 + 异常高亮 + 最新概览 |
+| 趋势数据查询 | 趋势分析 | ISS-028 | `src-tauri/src/commands/trend.rs` | 按指标 ID 查询历史值 + 对比计算 |
+| AI 分析流式生成 | AI 分析 | ISS-025, ISS-027 | `src-tauri/src/commands/ai.rs`, `src/views/history/index.vue` | SSE 流式请求 + Markdown 渲染 |
+| OCR 识别与结果展示 | OCR | ISS-022, ISS-024 | `src-tauri/src/commands/ocr.rs`, `src/views/history/index.vue` | 视觉模型调用 + JSON 解析 + 结果表格 |
+| 文件上传与预览 | 上传与存档 | ISS-018, ISS-019, ISS-021 | `src-tauri/src/commands/file.rs`, `src/views/upload/index.vue` | 批量上传 + 图片预览 + 缩略图 |
+| 检查记录管理 | 上传与存档 | ISS-016, ISS-017 | `src-tauri/src/commands/record.rs`, `src/views/history/index.vue` | 记录 CRUD + 状态流转 |
+
+### 2026-02-13
 
 | 能力名 | 归属模块 | 关联 Issue | 涉及文件 | 备注 |
 |--------|----------|-----------|----------|------|

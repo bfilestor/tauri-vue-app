@@ -56,5 +56,13 @@ pnpm tauri build
 
 ### 5. 开发步骤
 
+拿到用户需求后，仔细分析需求，并给出详细的实现方案，补充到plan/requirements.md中，
+并采用 Epic → Feature → Story → Issue 层级划分，标注依赖关系与优先级，详细划分issue，
+划分好依赖关系图和开发迭代计划，创建DDD测试用例和e2e测试用户，补充完善plan/todo-list.md 
+接着开始补充 plan/progress_list.md，更新准备开发计划，
+完成上述工作后，开始编码
+
 首先阅读 [需求文档](plan/requirements.md)，了解需求，及 [架构设计](plan/architecture.md)，然后阅读 [开发 Issue 进度清单](plan/progress_list.md)，最后按照清单中的 Issue 进行开发。
+
+开发完成后要更新，[text](plan/features-done.md)和plan/progress_list.md，记录开发进度
 

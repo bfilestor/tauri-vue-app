@@ -355,6 +355,35 @@
 
 ---
 
+### 3.4 模块四：AI 问答
+
+#### 3.4.1 核心布局
+- 采用左右分栏布局（参考 `stitch/AIQA.html`）
+  - 左侧（30%）：历史 AI 分析建议展示区
+  - 右侧（70%）：AI 问答对话框
+
+#### 3.4.2 左侧：历史分析建议
+- **数据源**：读取 `ai_analyses` 表（关联 `checkup_records` 获取日期）
+- **展示形式**：时间轴倒序排列，显示检查日期与概要
+- **交互功能**：
+  - **折叠/展开**：默认折叠，点击展开查看完整分析内容
+  - **分页加载**：支持滚动加载更多历史记录
+  - **内容编辑**：展开后可点击"编辑"按钮修改 AI 的建议内容并保存
+  - **引用发送**：点击"复制到输入框"按钮，将该段分析内容自动填充到右侧对话框的输入框中，方便用户针对该报告提问
+
+#### 3.4.3 右侧：AI 问答对话框
+- **功能定位**：用户与 AI 的自由问答，或基于左侧分析结果的深入咨询
+- **对话交互**：
+  - 输入框支持手动输入或从左侧引用
+  - 发送后 AI 流式返回答案
+  - 支持"重新生成"（可选）
+  - 聊天记录本地持久化存储（`chat_logs` 表）
+- **辅助功能**：
+  - **复制答案**：每条 AI 回复均有复制按钮，点击复制到剪贴板
+  - **清空记录**：一键清空当前对话历史
+
+---
+
 ## 4. 文件存储结构
 
 ```
@@ -433,6 +462,11 @@
 | `create_indicator` | `{ project_id, name, unit, reference_range, is_core }` | `Indicator` | 创建指标 |
 | `update_indicator` | `{ id, ... }` | `Indicator` | 更新指标 |
 | `delete_indicator` | `{ id }` | `bool` | 删除指标 |
+| `get_ai_analyses_history` | `{ page, size }` | `PagedList<Analysis>` | 获取所有历史分析 |
+| `update_ai_analysis` | `{ id, content }` | `bool` | 更新分析内容 |
+| `chat_with_ai` | `{ message, history_context? }` | `Stream<String>` | 与AI对话 |
+| `get_chat_history` | `{ page, size }` | `PagedList<ChatMessage>` | 获取对话历史 |
+| `clear_chat_history` | `{}` | `bool` | 清空对话历史 |
 
 ---
 

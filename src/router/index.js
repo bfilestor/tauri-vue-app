@@ -38,6 +38,16 @@ const routes = [
         component: () => import('@/views/history/index.vue'),
       },
       {
+        path: '/aiqa',
+        name: 'AIQA',
+        meta: {
+          keepAlive: true,
+          title: 'AI 问答',
+          icon: 'smart_toy',
+        },
+        component: () => import('@/views/aiqa/index.vue'),
+      },
+      {
         path: '/settings',
         name: 'Settings',
         meta: {

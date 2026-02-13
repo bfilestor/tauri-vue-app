@@ -63,6 +63,11 @@ pub fn run() {
             commands::system::reset_all_data,
             commands::system::backup_data,
             commands::system::restore_data,
+            commands::ai::get_ai_analyses_history,
+            commands::ai::update_ai_analysis_content,
+            commands::ai::chat_with_ai,
+            commands::ai::get_chat_history,
+            commands::ai::clear_chat_history,
         ])
         .setup(|app| {
             // 初始化日志（仅调试模式）

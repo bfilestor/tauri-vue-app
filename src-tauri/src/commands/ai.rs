@@ -371,3 +371,281 @@ fn update_ai_error(app: &tauri::AppHandle, analysis_id: &str, record_id: &str, e
         "error": error,
     })).ok();
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AiAnalysisHistoryItem {
+    pub id: String,
+    pub record_id: String,
+    pub checkup_date: String,
+    pub response_content: String,
+    pub created_at: String,
+}
+
+/// 获取历史 AI 分析记录（分页）
+#[tauri::command]
+pub fn get_ai_analyses_history(
+    page: i64,
+    size: i64,
+    db: tauri::State<Database>,
+) -> Result<Vec<AiAnalysisHistoryItem>, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+
+    let offset = (page - 1) * size;
+    let mut stmt = conn
+        .prepare(
+            "SELECT a.id, a.record_id, r.checkup_date, a.response_content, a.created_at
+             FROM ai_analyses a
+             JOIN checkup_records r ON a.record_id = r.id
+             WHERE a.status = 'success'
+             ORDER BY r.checkup_date DESC, a.created_at DESC
+             LIMIT ?1 OFFSET ?2",
+        )
+        .map_err(|e| format!("查询失败: {}", e))?;
+
+    let results = stmt
+        .query_map(rusqlite::params![size, offset], |row| {
+            Ok(AiAnalysisHistoryItem {
+                id: row.get(0)?,
+                record_id: row.get(1)?,
+                checkup_date: row.get(2)?,
+                response_content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })
+        .map_err(|e| format!("查询失败: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("解析数据失败: {}", e))?;
+
+    Ok(results)
+}
+
+/// 更新 AI 分析内容（编辑保存）
+#[tauri::command]
+pub fn update_ai_analysis_content(
+    id: String,
+    content: String,
+    db: tauri::State<Database>,
+) -> Result<bool, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+
+    conn.execute(
+        "UPDATE ai_analyses SET response_content = ?1 WHERE id = ?2",
+        rusqlite::params![content, id],
+    )
+    .map_err(|e| format!("更新失败: {}", e))?;
+
+    Ok(true)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
+/// 获取聊天历史
+#[tauri::command]
+pub fn get_chat_history(
+    limit: i64,
+    offset: i64,
+    db: tauri::State<Database>,
+) -> Result<Vec<ChatMessage>, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+
+    // Return DESC order (newest first) for easier pagination
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, role, content, created_at FROM chat_logs 
+             ORDER BY created_at DESC, role ASC 
+             LIMIT ?1 OFFSET ?2",
+        )
+        .map_err(|e| format!("查询失败: {}", e))?;
+
+    let results = stmt
+        .query_map(rusqlite::params![limit, offset], |row| {
+            Ok(ChatMessage {
+                id: row.get(0)?,
+                role: row.get(1)?,
+                content: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| format!("查询失败: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("解析数据失败: {}", e))?;
+
+    Ok(results)
+}
+
+/// 清空聊天历史
+#[tauri::command]
+pub fn clear_chat_history(db: tauri::State<Database>) -> Result<bool, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+
+    conn.execute("DELETE FROM chat_logs", [])
+        .map_err(|e| format!("删除失败: {}", e))?;
+
+    Ok(true)
+}
+
+/// 与 AI 对话（流式）
+#[tauri::command]
+pub async fn chat_with_ai(
+    message: String,
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Database>,
+) -> Result<String, String> {
+    use tauri::Emitter;
+    use futures_util::StreamExt;
+
+    // 1. 获取配置和上下文
+    let (config, model, chat_history) = {
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+
+        let config = http_client::load_ai_config(&conn)?;
+        let model = http_client::get_default_model(&conn);
+
+        // 获取最近 10 条历史记录作为上下文
+        let mut stmt = conn.prepare("SELECT role, content FROM chat_logs ORDER BY created_at DESC, role ASC LIMIT 10")
+            .map_err(|e| e.to_string())?;
+        
+        let mut history: Vec<(String, String)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        }).map_err(|e| e.to_string())?
+          .collect::<Result<Vec<_>, _>>()
+          .map_err(|e| e.to_string())?;
+          
+        history.reverse(); // 恢复时间顺序
+        (config, model, history)
+    };
+
+    let user_msg_id = uuid::Uuid::new_v4().to_string();
+    let ai_msg_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Local::now().to_rfc3339();
+
+    // 2. 保存用户消息
+    {
+         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+         
+         conn.execute(
+             "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'user', ?2, ?3)",
+             rusqlite::params![user_msg_id, message, now],
+         ).map_err(|e| e.to_string())?;
+         
+         // 预创建 AI 回复记录 (content empty)
+         conn.execute(
+             "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'assistant', '', ?2)",
+             rusqlite::params![ai_msg_id, now],
+         ).map_err(|e| e.to_string())?;
+    }
+
+    // 3. 构造请求
+    let mut messages = Vec::new();
+    messages.push(serde_json::json!({
+        "role": "system",
+        "content": "你是一位专业的医疗健康助手。请简明扼要地回答用户的问题。"
+    }));
+
+    for (role, content) in chat_history {
+        messages.push(serde_json::json!({ "role": role, "content": content }));
+    }
+    messages.push(serde_json::json!({ "role": "user", "content": message }));
+
+    let request_body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+        "max_tokens": 4096,
+    });
+
+    let ai_msg_id_clone = ai_msg_id.clone();
+    
+    // 4. 发送请求
+    tokio::spawn(async move {
+        let client = match http_client::build_client(&config) {
+            Ok(c) => c,
+            Err(e) => {
+                 app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("Client Error: {}", e)})).ok();
+                 return;
+            }
+        };
+
+        let response = match client
+            .post(&config.api_url)
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await 
+        {
+            Ok(r) => r,
+             Err(e) => {
+                 app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("Request Error: {}", e)})).ok();
+                 return;
+            }
+        };
+
+        if !response.status().is_success() {
+             app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("API Error: {}", response.status())})).ok();
+             return;
+        }
+
+        let mut stream = response.bytes_stream();
+        // Removed `full_content` initialization here, using buffer for lines
+        let mut full_response_content = String::new();
+        let mut buffer = String::new();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = match chunk_result {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            
+            let chunk_str = String::from_utf8_lossy(&chunk);
+            buffer.push_str(&chunk_str);
+
+            while let Some(line_end) = buffer.find('\n') {
+                let line = buffer[..line_end].trim().to_string();
+                buffer = buffer[line_end + 1..].to_string();
+
+                if line.is_empty() || line == "data: [DONE]" { continue; }
+
+                if let Some(json_str) = line.strip_prefix("data: ") {
+                     if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
+                        if let Some(content) = data["choices"][0]["delta"]["content"].as_str() {
+                            full_response_content.push_str(content);
+                            app.emit("chat_stream_chunk", serde_json::json!({
+                                "id": ai_msg_id_clone,
+                                "content": content
+                            })).ok();
+                        }
+                     }
+                }
+            }
+        }
+
+        // Update DB with full content
+        if let Some(db_state) = app.try_state::<Database>() {
+            if let Ok(conn_guard) = db_state.conn.lock() {
+                if let Some(conn) = conn_guard.as_ref() {
+                    let _ = conn.execute(
+                        "UPDATE chat_logs SET content = ?1 WHERE id = ?2",
+                        rusqlite::params![full_response_content, ai_msg_id_clone],
+                    );
+                }
+            }
+        }
+        
+        app.emit("chat_stream_done", serde_json::json!({"id": ai_msg_id_clone})).ok();
+    });
+
+    Ok(ai_msg_id)
+}

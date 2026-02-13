@@ -241,6 +241,41 @@
 
 ---
 
+## Epic 6：AI 问答模块 (AI Q&A)
+
+### Feature 6.1：布局与路由
+- [ ] **ISS-036** [前端] 添加 AI 问答路由与侧边栏入口
+  - 路由：`/aiqa`
+  - 侧边栏图标 reference `stitch/AIQA.html`
+  - 验收：点击侧边栏可进入 AI 问答空白页
+
+### Feature 6.2：左侧历史分析
+- [ ] **ISS-037** [后端] 实现 `get_ai_analyses_history` 和 `update_ai_analysis`
+  - 查询：JOIN `checkup_records` 获取日期，分页返回
+  - 更新：仅允许更新 content 字段
+  - 依赖：ISS-025
+- [ ] **ISS-038** [前端] 左侧时间轴组件
+  - 复用或仿照 `el-timeline`，支持折叠/展开
+  - 编辑模式切换（Textarea）与保存
+  - "复制到输入框"功能实现
+  - 滚动到底部自动加载更多
+  - 依赖：ISS-037
+
+### Feature 6.3：右侧 AI 问答
+- [ ] **ISS-039** [后端] 创建 `chat_logs` 表与相关 Command
+  - 表结构：`id, role, content, create_time`
+  - Command: `chat_with_ai` (流式, 存库), `get_chat_history`, `clear_chat_history`
+  - 依赖：ISS-006, ISS-012
+- [ ] **ISS-040** [前端] 问答对话框 UI
+  - 消息列表渲染（区分 User/AI 样式）
+  - 输入框与发送按钮
+  - 自动滚动到底部
+  - AI 回复流式渲染 (Markdown)
+  - 复制按钮与清空按钮
+  - 依赖：ISS-039
+
+---
+
 ## 依赖关系图
 
 ```mermaid

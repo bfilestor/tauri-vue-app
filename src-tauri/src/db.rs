@@ -152,6 +152,14 @@ impl Database {
                 config_value    TEXT DEFAULT '',
                 updated_at      TEXT NOT NULL
             );
+
+            -- 9. 聊天记录表
+            CREATE TABLE IF NOT EXISTS chat_logs (
+                id              TEXT PRIMARY KEY,
+                role            TEXT NOT NULL,
+                content         TEXT NOT NULL,
+                created_at      TEXT NOT NULL
+            );
             "
         )?;
         Ok(())

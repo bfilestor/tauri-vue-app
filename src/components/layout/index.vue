@@ -115,6 +115,7 @@ const menuItems = [
   { path: '/upload', title: '数据上传', icon: 'cloud_upload' },
   { path: '/trends', title: '趋势分析', icon: 'insights' },
   { path: '/history', title: '历史记录', icon: 'history' },
+  { path: '/aiqa', title: 'AI 问答', icon: 'smart_toy' },
   { path: '/settings', title: '系统设置', icon: 'settings' },
 ]
 
