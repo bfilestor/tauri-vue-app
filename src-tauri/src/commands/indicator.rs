@@ -159,3 +159,44 @@ pub fn delete_indicator(id: String, db: State<Database>) -> Result<bool, String>
 
     Ok(true)
 }
+
+#[tauri::command]
+pub fn ensure_indicator(input: CreateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Check if exists
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM indicators WHERE project_id = ?1 AND name = ?2)",
+        [&input.project_id, &input.name],
+        |row| row.get(0),
+    ).unwrap_or(false);
+
+    if exists {
+        return Err("指标已存在".to_string());
+    }
+
+    // Create
+    let now = chrono::Local::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+    let unit = input.unit.unwrap_or_default();
+    let reference_range = input.reference_range.unwrap_or_default();
+    let is_core = input.is_core.unwrap_or(true); // Default to true for this quick add action
+
+    conn.execute(
+        "INSERT INTO indicators (id, project_id, name, unit, reference_range, sort_order, is_core, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)",
+        rusqlite::params![id, input.project_id, input.name, unit, reference_range, is_core as i32, now],
+    )
+    .map_err(|e| format!("创建指标失败: {}", e))?;
+
+    Ok(Indicator {
+        id,
+        project_id: input.project_id,
+        name: input.name,
+        unit,
+        reference_range,
+        sort_order: 0,
+        is_core,
+        created_at: now,
+    })
+}

@@ -38,6 +38,7 @@ pub fn run() {
             commands::indicator::create_indicator,
             commands::indicator::update_indicator,
             commands::indicator::delete_indicator,
+            commands::indicator::ensure_indicator,
             commands::record::list_records,
             commands::record::create_record,
             commands::record::update_record,

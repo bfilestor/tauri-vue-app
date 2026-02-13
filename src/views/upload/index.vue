@@ -289,6 +289,13 @@
                   <el-tag v-else type="success" size="small">正常</el-tag>
                 </template>
               </el-table-column>
+              <el-table-column label="操作" width="100" align="center">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="setAsIndicator(row, ocr)" title="设为检查指标">
+                    设为指标
+                  </el-button>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
           
@@ -698,6 +705,33 @@ const handleRetryOcr = async (ocrItem) => {
         ocrItem.status = 'failed'
         ocrItem.error_message = '重试启动失败: ' + e
     }
+}
+
+const setAsIndicator = async (row, ocr) => {
+  if (!ocr.project_id) {
+    ElMessage.warning('无法确定所属项目，请从列表进入')
+    return
+  }
+  
+  try {
+    const input = {
+      project_id: ocr.project_id,
+      name: row.name,
+      unit: row.unit || null,
+      reference_range: row.reference_range || null,
+      is_core: true // Default to core indicator
+    }
+    
+    await invoke('ensure_indicator', { input })
+    ElMessage.success(`指标「${row.name}」添加成功`)
+  } catch (e) {
+    // Check for "exists" message
+    if (typeof e === 'string' && e.includes('已存在')) {
+       ElMessage.warning(`指标「${row.name}」已存在，无需重复添加`)
+    } else {
+       ElMessage.error(`添加失败: ${e}`)
+    }
+  }
 }
 
 // ===== 编辑 OCR 指标 =====
