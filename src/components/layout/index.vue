@@ -50,22 +50,53 @@
     </aside>
 
     <!-- 主内容区 -->
-    <main class="flex-1 ml-64 overflow-y-auto w-full">
-      <div class="p-8 max-w-6xl mx-auto">
-        <router-view v-slot="{ Component }">
-          <keep-alive>
+    <main class="flex-1 ml-64 h-full flex flex-col bg-slate-50">
+      <!-- 窗口控制栏 -->
+      <header class="h-10 flex items-center justify-between px-4 select-none shrink-0" data-tauri-drag-region>
+        <div class="flex-1 h-full" data-tauri-drag-region></div>
+        <div class="flex items-center gap-1 relative z-50">
+          <button 
+            @click="appWindow.minimize()"
+            class="p-2 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center w-8 h-8"
+            title="最小化"
+          >
+            <span class="material-symbols-outlined text-lg">remove</span>
+          </button>
+          <button 
+            @click="appWindow.toggleMaximize()"
+            class="p-2 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center w-8 h-8"
+            title="最大化/还原"
+          >
+            <span class="material-symbols-outlined text-lg">crop_square</span>
+          </button>
+          <button 
+            @click="appWindow.close()"
+            class="p-2 rounded-lg hover:bg-red-500 hover:text-white text-slate-600 transition-colors flex items-center justify-center w-8 h-8"
+            title="关闭"
+          >
+            <span class="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- 内容滚动区 -->
+      <div class="flex-1 overflow-y-auto w-full">
+        <div class="p-8 max-w-6xl mx-auto">
+          <router-view v-slot="{ Component }">
+            <keep-alive>
+              <component
+                :is="Component"
+                v-if="$route.meta.keepAlive"
+                :key="$route.name"
+              />
+            </keep-alive>
             <component
               :is="Component"
-              v-if="$route.meta.keepAlive"
+              v-if="!$route.meta.keepAlive"
               :key="$route.name"
             />
-          </keep-alive>
-          <component
-            :is="Component"
-            v-if="!$route.meta.keepAlive"
-            :key="$route.name"
-          />
-        </router-view>
+          </router-view>
+        </div>
       </div>
     </main>
   </div>
@@ -74,9 +105,11 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ElMessageBox } from 'element-plus'
 
 const route = useRoute()
+const appWindow = getCurrentWindow()
 
 const menuItems = [
   { path: '/upload', title: '数据上传', icon: 'cloud_upload' },
