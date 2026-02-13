@@ -5,15 +5,35 @@
       <p class="text-slate-500 mt-1">通过可视化图表追踪您的健康指标变化趋势，及时发现潜在风险。</p>
     </header>
 
-    <!-- 项目选择 -->
-    <div class="flex items-center gap-4 mb-6">
-      <el-select v-model="selectedProjectId" placeholder="选择检查项目" clearable @change="loadTrends" class="w-56">
-        <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-      </el-select>
-      <el-button type="primary" @click="loadAllTrends" :loading="loading">
-        <span class="material-symbols-outlined text-sm mr-1">show_chart</span>
-        查看全部项目
-      </el-button>
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-4">
+        <el-select v-model="selectedProjectId" placeholder="选择检查项目" clearable @change="loadTrends" class="w-56">
+          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+        </el-select>
+        <el-button type="primary" @click="loadAllTrends" :loading="loading">
+          <span class="material-symbols-outlined text-sm mr-1">show_chart</span>
+          查看全部项目
+        </el-button>
+      </div>
+
+      <!-- 时间范围切换 -->
+      <div class="bg-gray-200/50 p-1 rounded-xl flex items-center w-full sm:w-auto min-w-[240px]">
+        <button 
+          @click="timeRange = 5"
+          class="flex-1 py-1.5 text-xs font-medium transition-all rounded-lg"
+          :class="timeRange === 5 ? 'text-blue-600 bg-white shadow-sm font-semibold' : 'text-gray-500 hover:text-gray-700'"
+        >最近5次</button>
+        <button 
+          @click="timeRange = 10"
+          class="flex-1 py-1.5 text-xs font-medium transition-all rounded-lg"
+          :class="timeRange === 10 ? 'text-blue-600 bg-white shadow-sm font-semibold' : 'text-gray-500 hover:text-gray-700'"
+        >最近10次</button>
+        <button 
+          @click="timeRange = 20"
+          class="flex-1 py-1.5 text-xs font-medium transition-all rounded-lg"
+          :class="timeRange === 20 ? 'text-blue-600 bg-white shadow-sm font-semibold' : 'text-gray-500 hover:text-gray-700'"
+        >最近20次</button>
+      </div>
     </div>
 
     <!-- 加载状态 -->
@@ -45,7 +65,7 @@
         <div class="p-6">
           <!-- 无数据时 -->
           <div v-if="project.indicators.every(i => i.data_points.length === 0)" class="text-center py-8 text-slate-400 text-sm">
-            该项目暂无历史检测数据
+            该时段暂无检测数据
           </div>
 
           <!-- 指标网格 -->
@@ -94,7 +114,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch, onActivated } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts/core'
@@ -114,6 +134,41 @@ const projects = ref([])
 const selectedProjectId = ref('')
 const loading = ref(false)
 const trendData = ref([])
+const timeRange = ref(5)
+
+const filteredTrendData = computed(() => {
+    if (!trendData.value || trendData.value.length === 0) return []
+    
+    // 1. Collect all unique dates across all projects and indicators
+    const allDates = new Set()
+    trendData.value.forEach(p => {
+        p.indicators.forEach(i => {
+            i.data_points.forEach(dp => allDates.add(dp.checkup_date))
+        })
+    })
+    
+    // 2. Sort and slice (latest N)
+    const sortedDates = Array.from(allDates).sort() // String 'YYYY-MM-DD' sorts correctly ASC
+    // We want LAST timeRange dates
+    const cutoffDates = sortedDates.slice(-timeRange.value) 
+    const allowedDates = new Set(cutoffDates)
+    
+    // 3. Map new structure
+    return trendData.value.map(p => ({
+        ...p,
+        indicators: p.indicators.map(i => ({
+            ...i,
+            data_points: i.data_points.filter(dp => allowedDates.has(dp.checkup_date))
+        }))
+    }))
+})
+
+// watch timeRange
+watch(timeRange, () => {
+    nextTick(() => {
+        renderCharts()
+    })
+})
 
 // 图表实例管理
 const chartRefs = {}
@@ -170,7 +225,7 @@ const renderCharts = () => {
   // 销毁旧实例
   Object.values(chartInstances).forEach(inst => inst.dispose())
 
-  for (const project of trendData.value) {
+  for (const project of filteredTrendData.value) {
     for (const indicator of project.indicators) {
       if (indicator.data_points.length === 0) continue
 
@@ -227,6 +282,18 @@ const renderCharts = () => {
           smooth: true,
           symbol: 'circle',
           symbolSize: 8,
+          label: {
+            show: true,
+            position: 'top',
+            formatter: (params) => {
+                const dp = indicator.data_points[params.dataIndex]
+                return dp.value_text || dp.value
+            },
+            color: (params) => {
+                return abnormals[params.dataIndex] ? '#ef4444' : '#64748b'
+            },
+            fontSize: 10
+          },
           lineStyle: {
             width: 3,
             color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [

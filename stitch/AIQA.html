@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI 问答 - 健康管理系统</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#2b8cee",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #cbd5e1;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 font-display">
+<div class="flex h-screen overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+<div class="p-6 flex items-center gap-3">
+<div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+<span class="material-symbols-outlined">health_and_safety</span>
+</div>
+<div>
+<h1 class="text-slate-900 dark:text-white font-bold text-lg leading-tight">健康管理系统</h1>
+<p class="text-primary text-xs font-semibold">高级版</p>
+</div>
+</div>
+<nav class="flex-1 px-4 space-y-2 mt-4">
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px]">home</span>
+<span class="text-sm font-medium">首页</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px]">monitoring</span>
+<span class="text-sm font-medium">数据监测</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 bg-primary/10 text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px] fill-1">chat</span>
+<span class="text-sm font-bold">AI 问答</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px]">folder_shared</span>
+<span class="text-sm font-medium">健康档案</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px]">settings</span>
+<span class="text-sm font-medium">设置</span>
+</a>
+</nav>
+<div class="p-4 border-t border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-3 p-2">
+<img class="w-10 h-10 rounded-full bg-slate-200" data-alt="User profile avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAFd1_yuhYTH_CA4EkbUN1i38mzEeHCu9hEUq70VpStjlK17lOfM1CLgDDyoVjAaPHLw-MfOXUcbNKId2yEwojfvreXGtVUqjTPPQZPsNTIounyMsbMllhH18fF2wGUpej5wnU5poydPTqXerifHZDhWR5-q-LLSplEl8GdeFq4jdgkY6T4IgP6UGJ332XOuPBR54eG7AeTcTxCzrtPxatZnYx2dCdjyTnz3TXUz2PhNCSauQ6WknLnY7TWxbDw_V4gYn-3iKjEmg"/>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-semibold text-slate-900 dark:text-white truncate">张医生</p>
+<p class="text-xs text-slate-500 truncate">高级营养师</p>
+</div>
+<span class="material-symbols-outlined text-slate-400 text-sm">logout</span>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-white dark:bg-background-dark">
+<!-- Header -->
+<header class="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 bg-white dark:bg-slate-900">
+<div class="flex items-center gap-4">
+<h2 class="text-xl font-bold text-slate-900 dark:text-white">AI 健康助手</h2>
+<span class="flex items-center gap-1.5 px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-bold rounded-full">
+<span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                        在线
+                    </span>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<input class="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all" placeholder="搜索对话内容..." type="text"/>
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl">search</span>
+</div>
+<button class="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</div>
+</header>
+<div class="flex-1 flex overflow-hidden">
+<!-- Left Column: Historical Records (35%) -->
+<section class="w-[35%] border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900/50">
+<div class="p-6">
+<h3 class="text-lg font-bold text-slate-900 dark:text-white mb-1">历史 AI 分析建议</h3>
+<p class="text-sm text-slate-500">回顾过往的智能健康分析与指导</p>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 space-y-4 pl-12"><!-- Timeline Entry 1 -->
+<div class="relative mb-6 group">
+<div class="absolute left-[-24px] top-0 bottom-[-24px] w-[2px] bg-slate-100 group-last:bottom-0"></div>
+<div class="absolute left-[-29px] top-2 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white"></div>
+<div class="mb-2">
+<span class="text-sm text-slate-400">2024-02-13</span>
+</div>
+<div class="bg-white border border-slate-100 rounded-lg shadow-sm overflow-hidden">
+<div class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-slate-400 text-lg">chevron_right</span>
+<h4 class="text-base font-bold text-slate-800">2024-02-13 体检记录</h4>
+</div>
+<span class="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-xs rounded">已分析</span>
+</div>
+<div class="h-12 border-t border-slate-50 bg-slate-50/30"></div>
+</div>
+</div>
+<!-- Timeline Entry 2 -->
+<div class="relative mb-6 group">
+<div class="absolute left-[-24px] top-0 bottom-[-24px] w-[2px] bg-slate-100 group-last:bottom-0"></div>
+<div class="absolute left-[-29px] top-2 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white"></div>
+<div class="mb-2">
+<span class="text-sm text-slate-400">2024-02-12</span>
+</div>
+<div class="bg-white border border-slate-100 rounded-lg shadow-sm overflow-hidden">
+<div class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-slate-400 text-lg">chevron_right</span>
+<h4 class="text-base font-bold text-slate-800">2024-02-12 体检记录</h4>
+</div>
+<span class="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-xs rounded">已分析</span>
+</div>
+<div class="h-12 border-t border-slate-50 bg-slate-50/30"></div>
+</div>
+</div>
+<!-- Timeline Entry 3 -->
+<div class="relative mb-6 group">
+<div class="absolute left-[-24px] top-0 bottom-[-24px] w-[2px] bg-slate-100 group-last:bottom-0"></div>
+<div class="absolute left-[-29px] top-2 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white"></div>
+<div class="mb-2">
+<span class="text-sm text-slate-400">2024-02-11</span>
+</div>
+<div class="bg-white border border-slate-100 rounded-lg shadow-sm overflow-hidden">
+<div class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-slate-400 text-lg">chevron_right</span>
+<h4 class="text-base font-bold text-slate-800">2024-02-11 体检记录</h4>
+</div>
+<span class="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-xs rounded">已分析</span>
+</div>
+<div class="h-12 border-t border-slate-50 bg-slate-50/30"></div>
+</div>
+</div></div>
+</section>
+<!-- Right Column: Chat Interface (65%) -->
+<section class="flex-1 flex flex-col relative bg-white dark:bg-background-dark">
+<!-- Chat Messages Area -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8">
+<!-- Welcome message -->
+
+<!-- User Message -->
+<div class="flex flex-col items-end gap-2">
+<div class="flex items-center gap-2 mb-1">
+<span class="text-[11px] text-slate-400">今天 14:30</span>
+<span class="text-xs font-bold text-slate-700 dark:text-slate-300">我的问题</span>
+</div>
+<div class="bg-primary text-white px-5 py-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-lg shadow-primary/20">
+<p class="text-sm leading-relaxed">最近总是感觉下午 4 点左右特别容易疲劳，而且伴随轻微头晕，这是为什么？和我最近开始执行的低碳饮食有关吗？</p>
+</div>
+</div>
+<!-- AI Message -->
+<div class="flex flex-col items-start gap-2">
+<div class="flex items-center gap-2 mb-1">
+<span class="text-xs font-bold text-primary">AI 的回答</span>
+<span class="text-[11px] text-slate-400">今天 14:31</span>
+</div>
+<div class="flex gap-4 max-w-[85%]">
+<div class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700">
+<span class="material-symbols-outlined text-primary text-lg">smart_toy</span>
+</div>
+<div class="bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 px-5 py-4 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700 shadow-sm">
+<p class="text-sm leading-relaxed mb-4">这种情况确实可能与您的<span class="font-bold text-primary">低碳饮食习惯</span>有关。当身体从依赖葡萄糖转为消耗脂肪（进入轻度生酮状态）时，常会出现所谓的“低碳不适感”。</p>
+<div class="space-y-3">
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-green-500 text-lg">check_circle</span>
+<p class="text-sm">可能是由于<span class="font-semibold italic">电解质流失</span>引起的，建议适当补充淡盐水。</p>
+</div>
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-green-500 text-lg">check_circle</span>
+<p class="text-sm">下午 4 点是能量缺口期，可以尝试补充一些<span class="font-semibold italic">优质脂肪</span>（如一小把坚果）。</p>
+</div>
+</div>
+<div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+<p class="text-[11px] text-slate-400">以上建议仅供参考，如症状持续加重请及时就医。</p>
+<div class="flex gap-2">
+<button class="p-1 hover:text-primary transition-colors"><span class="material-symbols-outlined text-base">thumb_up</span></button>
+<button class="p-1 hover:text-red-500 transition-colors"><span class="material-symbols-outlined text-base">thumb_down</span></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Loading State Example (Static) -->
+
+</div>
+<!-- Message Input Area -->
+<div class="p-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200">
+<div class="max-w-4xl mx-auto flex flex-col gap-3">
+<div class="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+<button class="shrink-0 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs rounded-full hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20">解读体检报告</button>
+<button class="shrink-0 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs rounded-full hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20">制定减肥食谱</button>
+<button class="shrink-0 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs rounded-full hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20">分析睡眠质量</button>
+<button class="shrink-0 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs rounded-full hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20">高血压用药注意</button>
+</div>
+<div class="relative flex items-end gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+<button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+<span class="material-symbols-outlined">attach_file</span>
+</button>
+<textarea class="flex-1 bg-transparent border-none focus:ring-0 text-sm resize-none custom-scrollbar py-2 text-slate-900 dark:text-white placeholder:text-slate-400" placeholder="请输入您的健康问题..." rows="1"></textarea>
+<div class="flex gap-2">
+<button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+<span class="material-symbols-outlined">mic</span>
+</button>
+<button class="bg-primary text-white p-2 px-4 rounded-lg font-bold flex items-center gap-2 hover:bg-primary/90 shadow-md shadow-primary/20 transition-all">
+<span class="text-sm">发送</span>
+<span class="material-symbols-outlined text-sm">send</span>
+</button>
+</div>
+</div>
+<div class="flex justify-between items-center px-1">
+<button class="text-[11px] text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-sm">delete_sweep</span>
+                                    清空对话记录
+                                </button>
+<p class="text-[11px] text-slate-400">AI 助手可能会犯错。请考虑核实重要信息。</p>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</body></html>

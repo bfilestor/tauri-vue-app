@@ -30,22 +30,27 @@ pub struct UpdateRecordInput {
     pub status: Option<String>,
 }
 
-/// 查询全部检查记录（倒序）
+/// 查询全部检查记录（倒序），支持分页
 #[tauri::command]
-pub fn list_records(db: State<Database>) -> Result<Vec<CheckupRecord>, String> {
+pub fn list_records(limit: Option<i64>, offset: Option<i64>, db: State<Database>) -> Result<Vec<CheckupRecord>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    
+    let limit_val = limit.unwrap_or(1000); // Default to a large number if not specified to maintain "list all" behavior roughly, or just update callers
+    let offset_val = offset.unwrap_or(0);
+
     let mut stmt = conn
         .prepare(
             "SELECT r.id, r.checkup_date, r.status, r.notes, r.created_at, r.updated_at,
                     (SELECT COUNT(*) FROM checkup_files WHERE record_id = r.id) as file_count
              FROM checkup_records r
-             ORDER BY r.checkup_date DESC, r.created_at DESC"
+             ORDER BY r.checkup_date DESC, r.created_at DESC
+             LIMIT ?1 OFFSET ?2"
         )
         .map_err(|e| format!("查询检查记录失败: {}", e))?;
 
     let records = stmt
-        .query_map([], |row| {
+        .query_map([limit_val, offset_val], |row| {
             let record_id: String = row.get(0)?;
             Ok((record_id.clone(), CheckupRecord {
                 id: record_id,

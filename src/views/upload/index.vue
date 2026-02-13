@@ -19,6 +19,9 @@
     </div>
 
     <div v-else class="space-y-4">
+      <div v-if="records.length === 0" class="text-center py-10 text-slate-400">
+          暂无记录
+      </div>
       <div
         v-for="record in records"
         :key="record.id"
@@ -212,6 +215,21 @@
       </div>
     </div>
 
+    <!-- 加载更多按钮 -->
+    <div v-if="records.length > 0" class="py-6 text-center">
+      <el-button 
+        v-if="hasMore" 
+        :loading="loadingMore" 
+        @click="loadRecords(false)" 
+        type="primary" 
+        plain 
+        round
+      >
+        查看更多需要存档的记录 <span class="material-symbols-outlined ml-1 text-sm">expand_more</span>
+      </el-button>
+      <div v-else class="text-slate-400 text-sm">— 已显示全部记录 —</div>
+    </div>
+
     <!-- 新建检查记录弹窗 -->
     <el-dialog v-model="showCreateDialog" title="新建检查记录" width="400px" :close-on-click-modal="false">
       <el-form label-position="top">
@@ -391,11 +409,55 @@ const newRecordDate = ref('')
 const newRecordNotes = ref('')
 const creating = ref(false)
 
-const loadRecords = async () => {
+// 分页状态
+const currentPage = ref(1)
+const pageSize = ref(5) // 默认展示最新的5条
+const hasMore = ref(true)
+const loadingMore = ref(false)
+
+const loadRecords = async (reset = false) => {
+  if (reset) {
+    currentPage.value = 1
+    hasMore.value = true
+    records.value = []
+  }
+  
+  // 如果没有更多且不是重置，直接返回
+  if (!hasMore.value && !reset) return
+
+  // 设置加载状态
+  if (!reset) loadingMore.value = true
+
   try {
-    records.value = await invoke('list_records')
+    const offset = (currentPage.value - 1) * pageSize.value
+    console.log(`Loading records: limit=${pageSize.value}, offset=${offset}`)
+    
+    const newRecords = await invoke('list_records', { 
+        limit: pageSize.value, 
+        offset: offset 
+    })
+    
+    // 判断是否有更多数据（简单的判断：如果返回数量小于pageSize，说明没有更多了）
+    if (newRecords.length < pageSize.value) {
+        hasMore.value = false
+    }
+
+    if (reset) {
+        records.value = newRecords
+    } else {
+        // 追加模式
+        records.value = [...records.value, ...newRecords]
+    }
+    
+    // 有数据才增加页码，且仅仅在确实获取到了数据的情况下
+    if (newRecords.length > 0) {
+        currentPage.value++
+    }
+
   } catch (e) {
     ElMessage.error('加载检查记录失败: ' + e)
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -416,7 +478,7 @@ const createRecord = async () => {
     showCreateDialog.value = false
     newRecordDate.value = ''
     newRecordNotes.value = ''
-    await loadRecords()
+    await loadRecords(true)
     // 自动展开最新记录
     if (records.value.length > 0) {
       expandedId.value = records.value[0].id
@@ -438,7 +500,7 @@ const handleDeleteRecord = async (record) => {
     await invoke('delete_record', { id: record.id })
     ElMessage.success('记录已删除')
     if (expandedId.value === record.id) expandedId.value = null
-    await loadRecords()
+    await loadRecords(true)
   } catch (e) {
     if (e !== 'cancel') ElMessage.error('' + e)
   }
@@ -510,7 +572,7 @@ const doUpload = async (record) => {
     ElMessage.success(`${files.length} 个文件上传成功`)
     pendingFiles.value = []
     await loadFiles(record.id)
-    await loadRecords()
+    await loadRecords(true)
   } catch (e) {
     ElMessage.error('上传失败: ' + e)
   } finally {
@@ -558,7 +620,7 @@ const handleDeleteFile = async (file) => {
     await invoke('delete_file', { fileId: file.id })
     ElMessage.success('文件已删除')
     if (expandedId.value) await loadFiles(expandedId.value)
-    await loadRecords()
+    await loadRecords(true)
   } catch (e) {
     if (e !== 'cancel') ElMessage.error('' + e)
   }
@@ -844,7 +906,7 @@ const setupEventListeners = async () => {
       })
     }
 
-    loadRecords()
+    loadRecords(true)
     // 如果正在查看 OCR 结果，刷新列表
     if (showOcrDialog.value && currentViewRecord.value) {
       viewOcrResults(currentViewRecord.value)
@@ -856,7 +918,7 @@ const setupEventListeners = async () => {
     const data = event.payload
     ocrLoading.value = false
     ElMessage.error('OCR 错误: ' + data.error)
-    loadRecords()
+    loadRecords(true)
   })
 
   // AI 流式 chunk
@@ -874,7 +936,7 @@ const setupEventListeners = async () => {
       type: 'success',
       duration: 5000,
     })
-    loadRecords()
+    loadRecords(true)
   })
 
   // AI 错误
@@ -882,7 +944,7 @@ const setupEventListeners = async () => {
     const data = event.payload
     aiLoading.value = false
     ElMessage.error('AI 分析失败: ' + data.error)
-    loadRecords()
+    loadRecords(true)
   })
 }
 
@@ -949,7 +1011,7 @@ const statusIconClass = (status) => {
 
 // ===== 初始化 =====
 onMounted(() => {
-  loadRecords()
+  loadRecords(true)
   loadProjects()
   setupEventListeners()
 })
