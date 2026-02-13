@@ -122,6 +122,8 @@ const chartInstances = {}
 const setChartRef = (id, el) => {
   if (el) {
     chartRefs[id] = el
+  } else {
+    delete chartRefs[id]
   }
 }
 
@@ -140,12 +142,12 @@ const loadTrends = async () => {
   try {
     const data = await invoke('get_project_trends', { projectId: selectedProjectId.value })
     trendData.value = [data]
+    loading.value = false // 先结束加载状态，让 DOM 渲染
     await nextTick()
     renderCharts()
   } catch (e) {
-    ElMessage.error('加载趋势数据失败: ' + e)
-  } finally {
     loading.value = false
+    ElMessage.error('加载趋势数据失败: ' + e)
   }
 }
 
@@ -155,12 +157,12 @@ const loadAllTrends = async () => {
   try {
     const data = await invoke('get_all_trends')
     trendData.value = data
+    loading.value = false // 先结束加载状态，让 DOM 渲染
     await nextTick()
     renderCharts()
   } catch (e) {
-    ElMessage.error('加载趋势数据失败: ' + e)
-  } finally {
     loading.value = false
+    ElMessage.error('加载趋势数据失败: ' + e)
   }
 }
 
