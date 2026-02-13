@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 pub struct Database {
-    pub conn: Mutex<Connection>,
+    pub conn: Mutex<Option<Connection>>,
+    pub db_path: PathBuf,
 }
 
 impl Database {
@@ -11,22 +12,41 @@ impl Database {
     pub fn new(app_dir: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&app_dir).ok();
         let db_path = app_dir.join("health_guard.db");
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open(&db_path)?;
 
         // 启用 WAL 模式提升并发性能
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
 
         let db = Database {
-            conn: Mutex::new(conn),
+            conn: Mutex::new(Some(conn)),
+            db_path,
         };
         db.init_tables()?;
         Ok(db)
     }
 
+    pub fn close(&self) -> Result<(), String> {
+        let mut conn_guard = self.conn.lock().map_err(|e| e.to_string())?;
+        *conn_guard = None;
+        Ok(())
+    }
+
+    pub fn reopen(&self) -> Result<(), String> {
+        let mut conn_guard = self.conn.lock().map_err(|e| e.to_string())?;
+        if conn_guard.is_none() {
+             let conn = Connection::open(&self.db_path).map_err(|e| e.to_string())?;
+             conn.execute_batch("PRAGMA journal_mode=WAL;").map_err(|e| e.to_string())?;
+             conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e| e.to_string())?;
+             *conn_guard = Some(conn);
+        }
+        Ok(())
+    }
+
     /// 创建全部 8 张表
     fn init_tables(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard.as_ref().expect("Database not initialized");
         conn.execute_batch(
             "
             -- 1. 检查项目表

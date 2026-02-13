@@ -35,7 +35,8 @@ pub struct UpdateIndicatorInput {
 
 #[tauri::command]
 pub fn list_indicators(project_id: String, db: State<Database>) -> Result<Vec<Indicator>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT id, project_id, name, unit, reference_range, sort_order, is_core, created_at
@@ -65,7 +66,8 @@ pub fn list_indicators(project_id: String, db: State<Database>) -> Result<Vec<In
 
 #[tauri::command]
 pub fn create_indicator(input: CreateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
     let unit = input.unit.unwrap_or_default();
@@ -93,7 +95,8 @@ pub fn create_indicator(input: CreateIndicatorInput, db: State<Database>) -> Res
 
 #[tauri::command]
 pub fn update_indicator(input: UpdateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let existing = conn.query_row(
         "SELECT id, project_id, name, unit, reference_range, sort_order, is_core, created_at
@@ -139,7 +142,8 @@ pub fn update_indicator(input: UpdateIndicatorInput, db: State<Database>) -> Res
 
 #[tauri::command]
 pub fn delete_indicator(id: String, db: State<Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // 检查是否有关联的指标值
     let value_count: i32 = conn
@@ -162,7 +166,8 @@ pub fn delete_indicator(id: String, db: State<Database>) -> Result<bool, String>
 
 #[tauri::command]
 pub fn ensure_indicator(input: CreateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // Check if exists
     let exists: bool = conn.query_row(

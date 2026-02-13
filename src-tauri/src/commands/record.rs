@@ -33,7 +33,8 @@ pub struct UpdateRecordInput {
 /// 查询全部检查记录（倒序）
 #[tauri::command]
 pub fn list_records(db: State<Database>) -> Result<Vec<CheckupRecord>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT r.id, r.checkup_date, r.status, r.notes, r.created_at, r.updated_at,
@@ -86,7 +87,8 @@ pub fn list_records(db: State<Database>) -> Result<Vec<CheckupRecord>, String> {
 /// 创建检查记录
 #[tauri::command]
 pub fn create_record(input: CreateRecordInput, db: State<Database>) -> Result<CheckupRecord, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
     let notes = input.notes.unwrap_or_default();
@@ -113,7 +115,8 @@ pub fn create_record(input: CreateRecordInput, db: State<Database>) -> Result<Ch
 /// 更新检查记录
 #[tauri::command]
 pub fn update_record(input: UpdateRecordInput, db: State<Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
 
     let existing = conn.query_row(
@@ -138,7 +141,8 @@ pub fn update_record(input: UpdateRecordInput, db: State<Database>) -> Result<bo
 /// 删除检查记录（级联删除关联数据）
 #[tauri::command]
 pub fn delete_record(id: String, db: State<Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // 级联删除：indicator_values -> ocr_results -> ai_analyses -> checkup_files -> checkup_records
     conn.execute("DELETE FROM indicator_values WHERE record_id = ?1", [&id])
@@ -178,7 +182,8 @@ pub struct AbnormalItem {
 
 #[tauri::command]
 pub fn get_history_timeline(db: State<Database>) -> Result<Vec<HistoryTimelineItem>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     
     // 1. 获取所有检查记录
     let mut stmt = conn.prepare(
@@ -254,7 +259,8 @@ pub fn get_history_timeline(db: State<Database>) -> Result<Vec<HistoryTimelineIt
 /// 获取单条检查记录详情
 #[tauri::command]
 pub fn get_record(id: String, db: State<Database>) -> Result<CheckupRecord, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let mut record = conn.query_row(
         "SELECT id, checkup_date, status, notes, created_at, updated_at,
@@ -299,7 +305,8 @@ pub fn get_or_create_today_record(db: State<Database>) -> Result<CheckupRecord, 
     
     // 1. 尝试查找今天的记录
     let existing_id: Option<String> = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
         conn.query_row(
             "SELECT id FROM checkup_records WHERE checkup_date = ?1 LIMIT 1",
             [&today],

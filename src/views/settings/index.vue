@@ -193,6 +193,28 @@
                 </el-button>
             </div>
             </div>
+            
+            <el-divider />
+            
+            <div class="px-2">
+                <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-blue-500">cloud_sync</span>
+                    数据备份与还原
+                </h4>
+                 <p class="text-sm text-slate-500 mb-4 leading-relaxed">
+                    定期备份数据是个好习惯。备份文件为 ZIP 压缩包，包含完整的数据库记录和检查报告图片。
+                </p>
+                <div class="flex gap-4">
+                     <el-button type="primary" plain @click="handleBackupData">
+                        <span class="material-symbols-outlined text-sm mr-2">upload</span>
+                        导出备份
+                    </el-button>
+                    <el-button type="warning" plain @click="handleRestoreData">
+                        <span class="material-symbols-outlined text-sm mr-2">download</span>
+                        导入还原
+                    </el-button>
+                </div>
+            </div>
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -268,7 +290,8 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
+import { save, open } from '@tauri-apps/plugin-dialog'
 
 // ===== AI 配置 =====
 const activeTab = ref('ai')
@@ -636,6 +659,76 @@ const handleResetAllData = async () => {
         if (e !== 'cancel') ElMessage.warning('操作已取消')
     }
 }
+
+const handleBackupData = async () => {
+  try {
+    // 默认文件名：health_backup_YYYY-MM-DD-HH-mm-ss.zip
+    const defaultName = `health_backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`
+    const path = await save({
+      filters: [{
+        name: 'ZIP Backup',
+        extensions: ['zip']
+      }],
+      defaultPath: defaultName
+    });
+    
+    if (!path) return;
+    
+    const loading = ElLoading.service({ text: '正在备份数据...', background: 'rgba(255, 255, 255, 0.7)' });
+    try {
+       await invoke('backup_data', { targetPath: path });
+       ElMessage.success('数据备份成功');
+    } finally {
+       loading.close();
+    }
+  } catch (e) {
+    ElMessage.error('备份失败: ' + e);
+  }
+}
+
+const handleRestoreData = async () => {
+    try {
+        const path = await open({
+           filters: [{
+             name: 'ZIP Backup',
+             extensions: ['zip']
+           }],
+           multiple: false,
+           directory: false
+        });
+        
+        if (!path) return;
+        
+        await ElMessageBox.confirm(
+            '还原操作将覆盖当前所有数据（包括图片和数据库），不可撤销！\n建议先备份当前数据。\n\n确定要继续还原吗？',
+            '确认还原',
+            { 
+              type: 'warning', 
+              confirmButtonText: '继续还原', 
+              cancelButtonText: '取消',
+              confirmButtonClass: 'el-button--warning'
+            }
+        );
+        
+        const loading = ElLoading.service({ text: '正在还原数据，请勿关闭程序...', background: 'rgba(255, 255, 255, 0.7)' });
+        try {
+            await invoke('restore_data', { sourcePath: path });
+            loading.close(); // 关闭 loading 再弹窗
+            
+            await ElMessageBox.alert('数据还原成功！即将刷新页面以加载新数据。', '还原成功', {
+              confirmButtonText: '确定',
+              type: 'success'
+            });
+            window.location.reload();
+        } catch (e) {
+            loading.close();
+           if (e !== 'cancel') ElMessage.error('还原失败: ' + e);
+        }
+    } catch (e) {
+        if (e !== 'cancel') ElMessage.error('还原操作异常: ' + e);
+    }
+}
+
 
 // ===== 初始化 =====
 onMounted(() => {

@@ -11,7 +11,8 @@ pub struct ConfigValue {
 
 #[tauri::command]
 pub fn get_config(key: String, db: State<Database>) -> Result<String, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let result = conn.query_row(
         "SELECT config_value FROM system_config WHERE config_key = ?1",
         [&key],
@@ -26,7 +27,8 @@ pub fn get_config(key: String, db: State<Database>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn save_config(key: String, value: String, db: State<Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
 

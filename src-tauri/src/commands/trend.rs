@@ -28,7 +28,8 @@ pub struct ProjectTrend {
 /// 获取某个项目的趋势数据
 #[tauri::command]
 pub fn get_project_trends(project_id: String, db: tauri::State<Database>) -> Result<ProjectTrend, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // 获取项目名称
     let project_name: String = conn
@@ -106,7 +107,8 @@ pub fn get_project_trends(project_id: String, db: tauri::State<Database>) -> Res
 /// 获取所有项目的概要趋势数据
 #[tauri::command]
 pub fn get_all_trends(db: tauri::State<Database>) -> Result<Vec<ProjectTrend>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // 获取所有活跃项目
     let mut proj_stmt = conn
@@ -125,7 +127,7 @@ pub fn get_all_trends(db: tauri::State<Database>) -> Result<Vec<ProjectTrend>, S
         .map_err(|e| format!("解析项目数据失败: {}", e))?;
 
     drop(proj_stmt);
-    drop(conn);
+    drop(conn_guard);
 
     let mut result = Vec::new();
     for (pid, _pname) in &projects {

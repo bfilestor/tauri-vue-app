@@ -31,7 +31,8 @@ pub struct UpdateProjectInput {
 
 #[tauri::command]
 pub fn list_projects(db: State<Database>) -> Result<Vec<Project>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let mut stmt = conn
         .prepare("SELECT id, name, description, sort_order, is_active, created_at, updated_at FROM checkup_projects ORDER BY sort_order ASC, created_at ASC")
         .map_err(|e| format!("查询项目失败: {}", e))?;
@@ -61,7 +62,8 @@ pub fn create_project(
     db: State<Database>,
     app_dir: State<AppDir>,
 ) -> Result<Project, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
     let description = input.description.unwrap_or_default();
@@ -91,7 +93,8 @@ pub fn create_project(
 
 #[tauri::command]
 pub fn update_project(input: UpdateProjectInput, db: State<Database>) -> Result<Project, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
 
     // 先查询现有数据
@@ -135,7 +138,8 @@ pub fn update_project(input: UpdateProjectInput, db: State<Database>) -> Result<
 
 #[tauri::command]
 pub fn delete_project(id: String, db: State<Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // 检查是否有关联文件
     let file_count: i32 = conn

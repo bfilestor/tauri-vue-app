@@ -61,6 +61,8 @@ pub fn run() {
             commands::trend::get_all_trends,
             commands::system::reset_checkup_data,
             commands::system::reset_all_data,
+            commands::system::backup_data,
+            commands::system::restore_data,
         ])
         .setup(|app| {
             // 初始化日志（仅调试模式）
@@ -104,9 +106,10 @@ fn show_window(app: &AppHandle) {
 async fn test_ai_connection(db: tauri::State<'_, db::Database>) -> Result<String, String> {
     // 读取配置
     let (config, model) = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        let config = services::http_client::load_ai_config(&conn)?;
-        let model = services::http_client::get_default_model(&conn);
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+        let config = services::http_client::load_ai_config(conn)?;
+        let model = services::http_client::get_default_model(conn);
         (config, model)
     };
 

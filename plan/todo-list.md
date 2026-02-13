@@ -84,12 +84,25 @@
   - 依赖：ISS-012, ISS-013
 
 #### Story 2.2.2：OCR / AI Prompt 模板配置
-- [ ] **ISS-015** [后端+前端] OCR Prompt 模板与 AI 分析 Prompt 模板设置
+- [x] **ISS-015** [后端+前端] OCR Prompt 模板与 AI 分析 Prompt 模板设置
   - 使用 `el-input` type="textarea" 编辑 Prompt 模板
   - 提供默认模板（程序首次启动时写入）
   - 配置键：`ocr_prompt_template`、`ai_analysis_prompt_template`
   - 验收：可编辑并保存自定义 Prompt
   - 依赖：ISS-012
+
+### Feature 2.3：数据备份与还原
+
+#### Story 2.3.1：数据安全
+- [x] **ISS-034** [后端] 实现 `backup_data` 和 `restore_data` Command
+  - 备份：打包数据库和图片目录为 ZIP
+  - 还原：解压覆盖，处理数据库连接释放与重连
+  - 依赖：ISS-006, ISS-018
+- [x] **ISS-035** [前端] 备份与还原 UI
+  - 在设置页面的数据管理标签页添加操作区
+  - 调用系统文件对话框选择保存/打开路径
+  - 还原前严重警告
+  - 依赖：ISS-034
 
 ---
 

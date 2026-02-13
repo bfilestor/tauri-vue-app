@@ -28,7 +28,8 @@ pub async fn start_ai_analysis(
 
     // 1. 收集数据：当前 OCR 结果 + 历史数据
     let (config, model, ai_prompt, prompt_data, analysis_id) = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
         // 获取 AI 配置
         let config = http_client::load_ai_config(&conn)?;
@@ -281,7 +282,8 @@ pub async fn start_ai_analysis(
 
         // 保存完成的分析结果
         if let Some(db_state) = app.try_state::<Database>() {
-            if let Ok(conn) = db_state.conn.lock() {
+            if let Ok(conn_guard) = db_state.conn.lock() {
+                if let Some(conn) = conn_guard.as_ref() {
                 let now = chrono::Local::now().to_rfc3339();
 
                 let _: Result<usize, _> = conn.execute(
@@ -293,6 +295,7 @@ pub async fn start_ai_analysis(
                     "UPDATE checkup_records SET status = 'ai_done', updated_at = ?1 WHERE id = ?2",
                     rusqlite::params![now, record_id_clone],
                 );
+                }
             }
         }
 
@@ -309,7 +312,8 @@ pub async fn start_ai_analysis(
 /// 获取 AI 分析结果
 #[tauri::command]
 pub fn get_ai_analysis(record_id: String, db: tauri::State<Database>) -> Result<Vec<AiAnalysis>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -344,7 +348,8 @@ fn update_ai_error(app: &tauri::AppHandle, analysis_id: &str, record_id: &str, e
     use tauri::Emitter;
 
     if let Some(db_state) = app.try_state::<Database>() {
-        if let Ok(conn) = db_state.conn.lock() {
+        if let Ok(conn_guard) = db_state.conn.lock() {
+            if let Some(conn) = conn_guard.as_ref() {
             let now = chrono::Local::now().to_rfc3339();
 
             let _: Result<usize, _> = conn.execute(
@@ -356,6 +361,7 @@ fn update_ai_error(app: &tauri::AppHandle, analysis_id: &str, record_id: &str, e
                 "UPDATE checkup_records SET status = 'ocr_done', updated_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, record_id],
             );
+            }
         }
     }
 

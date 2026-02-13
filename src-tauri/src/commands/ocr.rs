@@ -47,7 +47,8 @@ pub async fn start_ocr(
 
     // 1. 查询记录和关联的文件
     let (files, checkup_date, config, model, ocr_prompt, indicators_map) = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
         // 获取检查日期
         let checkup_date: String = conn
@@ -123,7 +124,8 @@ pub async fn start_ocr(
 
     // 更新状态为 ocr_processing
     {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
         let now = chrono::Local::now().to_rfc3339();
         conn.execute(
             "UPDATE checkup_records SET status = 'ocr_processing', updated_at = ?1 WHERE id = ?2",
@@ -262,7 +264,8 @@ pub async fn start_ocr(
 
             // 获取数据库连接并保存
             if let Some(db_state) = app.try_state::<Database>() {
-                if let Ok(conn) = db_state.conn.lock() {
+                if let Ok(conn_guard) = db_state.conn.lock() {
+                    if let Some(conn) = conn_guard.as_ref() {
                      let _: Result<usize, _> = conn.execute(
                         "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'success', '', ?8)",
@@ -301,13 +304,15 @@ pub async fn start_ocr(
                     }
                 }
             }
+        }
 
             success_count += 1;
         }
 
         // 更新检查记录状态
         if let Some(db_state) = app.try_state::<Database>() {
-            if let Ok(conn) = db_state.conn.lock() {
+            if let Ok(conn_guard) = db_state.conn.lock() {
+                if let Some(conn) = conn_guard.as_ref() {
                 let now = chrono::Local::now().to_rfc3339();
                 let new_status = if success_count > 0 { "ocr_done" } else { "pending_ocr" };
                 let _: Result<usize, _> = conn.execute(
@@ -316,6 +321,7 @@ pub async fn start_ocr(
                 );
             }
         }
+    }
 
         // 发送完成事件
         app.emit("ocr_complete", serde_json::json!({
@@ -341,7 +347,8 @@ pub async fn retry_ocr(
 
     // 1. 查询必要信息
     let (file_info, record_id, checkup_date, config, model, ocr_prompt, indicators_map) = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
         // 查询 OCR 记录关联的信息
         let (file_id, record_id, project_id) = conn.query_row(
@@ -405,7 +412,8 @@ pub async fn retry_ocr(
 
     // 插入新记录 (状态 processing)
     if let Some(db_state) = app.try_state::<Database>() {
-        if let Ok(conn) = db_state.conn.lock() {
+        if let Ok(conn_guard) = db_state.conn.lock() {
+            if let Some(conn) = conn_guard.as_ref() {
              let now = chrono::Local::now().to_rfc3339();
              let _: Result<usize, _> = conn.execute(
                  "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
@@ -424,6 +432,7 @@ pub async fn retry_ocr(
                  "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
                  [&file_id, &ocr_id_clone], 
              );
+            }
         }
     }
     
@@ -505,7 +514,8 @@ pub async fn retry_ocr(
         
         // 更新数据库
         if let Some(db_state) = app.try_state::<Database>() {
-            if let Ok(conn) = db_state.conn.lock() {
+            if let Ok(conn_guard) = db_state.conn.lock() {
+                if let Some(conn) = conn_guard.as_ref() {
                 let now = chrono::Local::now().to_rfc3339();
                 
                 // 更新 ocr_results
@@ -529,7 +539,8 @@ pub async fn retry_ocr(
                               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                              rusqlite::params![iv_id, ocr_id_clone, record_id_clone, project_id, indicator_id, checkup_date, value, item.value, item.is_abnormal as i32, now],
                          );
-                     }
+                        }
+                    }
                 }
             }
         }
@@ -548,11 +559,13 @@ pub async fn retry_ocr(
 
 fn update_ocr_failed(app: &tauri::AppHandle, ocr_id: &str, error: &str) {
     if let Some(db_state) = app.try_state::<Database>() {
-        if let Ok(conn) = db_state.conn.lock() {
+        if let Ok(conn_guard) = db_state.conn.lock() {
+            if let Some(conn) = conn_guard.as_ref() {
              let _: Result<usize, _> = conn.execute(
                  "UPDATE ocr_results SET status = 'failed', error_message = ?1 WHERE id = ?2",
                  [error, ocr_id],
              );
+            }
         }
     }
 }
@@ -567,7 +580,8 @@ fn save_ocr_error(
     error_msg: &str,
 ) {
     if let Some(db_state) = app.try_state::<Database>() {
-        if let Ok(conn) = db_state.conn.lock() {
+        if let Ok(conn_guard) = db_state.conn.lock() {
+            if let Some(conn) = conn_guard.as_ref() {
             let ocr_id = uuid::Uuid::new_v4().to_string();
             let now = chrono::Local::now().to_rfc3339();
             let _: Result<usize, _> = conn.execute(
@@ -585,6 +599,7 @@ fn save_ocr_error(
                 "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
                 [file_id, &ocr_id], 
             );
+            }
         }
     }
 }
@@ -597,7 +612,8 @@ pub fn update_ocr_item(
     item: OcrParsedItem,
     db: tauri::State<Database>,
 ) -> Result<(), String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // 1. 获取当前数据
     let (parsed_items_str, project_id, record_id, checkup_date): (String, String, String, String) = conn.query_row(
@@ -658,7 +674,8 @@ pub fn update_ocr_item(
 /// 查询 OCR 状态
 #[tauri::command]
 pub fn get_ocr_status(record_id: String, db: tauri::State<Database>) -> Result<serde_json::Value, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let total_files: i32 = conn
         .query_row(
@@ -712,7 +729,8 @@ pub fn get_ocr_status(record_id: String, db: tauri::State<Database>) -> Result<s
 /// 获取 OCR 结果
 #[tauri::command]
 pub fn get_ocr_results(record_id: String, db: tauri::State<Database>) -> Result<Vec<OcrResult>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let mut stmt = conn
         .prepare(

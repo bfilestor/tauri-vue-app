@@ -33,7 +33,8 @@ pub fn upload_files(
     db: State<Database>,
     app_dir: State<AppDir>,
 ) -> Result<Vec<CheckupFile>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
     let mut result = Vec::new();
 
@@ -119,7 +120,8 @@ pub fn upload_files(
 /// 获取某次检查记录的所有文件
 #[tauri::command]
 pub fn list_files(record_id: String, db: State<Database>) -> Result<Vec<CheckupFile>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT f.id, f.record_id, f.project_id, p.name, f.original_filename, f.stored_path, f.file_size, f.mime_type, f.uploaded_at
@@ -154,7 +156,8 @@ pub fn list_files(record_id: String, db: State<Database>) -> Result<Vec<CheckupF
 /// 读取文件内容（Base64），用于前端预览
 #[tauri::command]
 pub fn read_file_base64(file_id: String, db: State<Database>, app_dir: State<AppDir>) -> Result<String, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let (stored_path, mime_type): (String, String) = conn
         .query_row(
@@ -175,7 +178,8 @@ pub fn read_file_base64(file_id: String, db: State<Database>, app_dir: State<App
 /// 删除文件
 #[tauri::command]
 pub fn delete_file(file_id: String, db: State<Database>, app_dir: State<AppDir>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     let stored_path: String = conn
         .query_row(
