@@ -9,12 +9,13 @@ pub struct AiClientConfig {
     pub proxy_url: String,
     pub proxy_username: String,
     pub proxy_password: String,
+    pub timeout: u64,
 }
 
 /// 根据配置构建 HTTP 客户端（支持 SOCKS5 代理）
 pub fn build_client(config: &AiClientConfig) -> Result<Client, String> {
     let mut builder = Client::builder()
-        .timeout(Duration::from_secs(120));
+        .timeout(Duration::from_secs(config.timeout));
 
     if config.proxy_enabled && !config.proxy_url.is_empty() {
         let proxy_addr = if config.proxy_url.starts_with("socks5://") || config.proxy_url.starts_with("http") {
@@ -53,6 +54,7 @@ pub fn load_ai_config(conn: &rusqlite::Connection) -> Result<AiClientConfig, Str
     let proxy_url = get_config("proxy_url");
     let proxy_username = get_config("proxy_username");
     let proxy_password = get_config("proxy_password");
+    let timeout = get_config("ai_timeout").parse::<u64>().unwrap_or(120);
 
     if api_url.is_empty() {
         return Err("请先配置 AI API 地址".into());
@@ -68,6 +70,7 @@ pub fn load_ai_config(conn: &rusqlite::Connection) -> Result<AiClientConfig, Str
         proxy_url,
         proxy_username,
         proxy_password,
+        timeout,
     })
 }
 

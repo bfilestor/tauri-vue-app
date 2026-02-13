@@ -52,6 +52,9 @@
                   <el-option v-for="model in aiConfig.models" :key="model" :label="model" :value="model" />
                 </el-select>
               </el-form-item>
+              <el-form-item label="请求超时时间 (秒)">
+                <el-input-number v-model="aiConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" />
+              </el-form-item>
               <el-divider />
               <div class="flex items-center justify-between mb-4">
                 <div>
@@ -285,6 +288,7 @@ const aiConfig = reactive({
   proxyUrl: '',
   proxyUsername: '',
   proxyPassword: '',
+  timeout: 120,
 })
 
 const ocrPrompt = ref('')
@@ -315,6 +319,7 @@ const loadAiConfig = async () => {
     const proxyUrl = await invoke('get_config', { key: 'proxy_url' })
     const proxyUsername = await invoke('get_config', { key: 'proxy_username' })
     const proxyPassword = await invoke('get_config', { key: 'proxy_password' })
+    const timeout = await invoke('get_config', { key: 'ai_timeout' })
 
     aiConfig.apiUrl = url || ''
     aiConfig.apiKey = key || ''
@@ -324,6 +329,7 @@ const loadAiConfig = async () => {
     aiConfig.proxyUrl = proxyUrl || ''
     aiConfig.proxyUsername = proxyUsername || ''
     aiConfig.proxyPassword = proxyPassword || ''
+    aiConfig.timeout = timeout ? parseInt(timeout) : 120
 
     const ocrTpl = await invoke('get_config', { key: 'ocr_prompt_template' })
     const aiTpl = await invoke('get_config', { key: 'ai_analysis_prompt_template' })
@@ -345,6 +351,7 @@ const saveAiConfig = async () => {
     await invoke('save_config', { key: 'proxy_url', value: aiConfig.proxyUrl })
     await invoke('save_config', { key: 'proxy_username', value: aiConfig.proxyUsername })
     await invoke('save_config', { key: 'proxy_password', value: aiConfig.proxyPassword })
+    await invoke('save_config', { key: 'ai_timeout', value: String(aiConfig.timeout) })
     ElMessage.success('AI 配置保存成功')
   } catch (e) {
     ElMessage.error('保存失败: ' + e)
