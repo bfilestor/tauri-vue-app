@@ -94,7 +94,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, onActivated } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts/core'
@@ -313,6 +313,18 @@ onMounted(() => {
   loadProjects()
   loadAllTrends()
   window.addEventListener('resize', handleResize)
+})
+
+onActivated(() => {
+  loadProjects()
+  if (selectedProjectId.value) {
+    loadTrends()
+  } else {
+    loadAllTrends()
+  }
+  setTimeout(() => {
+    handleResize()
+  }, 100)
 })
 
 onUnmounted(() => {

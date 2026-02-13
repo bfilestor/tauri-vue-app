@@ -122,14 +122,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onActivated } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
 
+// ===== 历史记录 =====
 const records = ref([])
 const loading = ref(true)
 
-onMounted(async () => {
+const loadData = async () => {
+  loading.value = true
   try {
     const data = await invoke('get_history_timeline')
     records.value = data.map((item, index) => ({
@@ -143,6 +145,14 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  loadData()
+})
+
+onActivated(() => {
+  loadData()
 })
 
 const getStatusColor = (record) => {

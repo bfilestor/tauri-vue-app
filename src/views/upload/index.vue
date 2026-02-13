@@ -244,7 +244,7 @@
     </el-dialog>
 
     <!-- OCR 结果弹窗 -->
-    <el-dialog v-model="showOcrDialog" title="OCR 识别结果" width="70%" top="5vh">
+    <el-dialog v-model="showOcrDialog" title="OCR 识别结果" width="70%" top="5vh" append-to-body>
       <div v-if="ocrResults.length === 0" class="text-center py-10 text-slate-400">
         暂无 OCR 结果
       </div>
@@ -338,7 +338,7 @@
     </el-dialog>
 
     <!-- AI 分析结果弹窗 -->
-    <el-dialog v-model="showAiDialog" title="AI 分析结果" width="70%" top="5vh">
+    <el-dialog v-model="showAiDialog" title="AI 分析结果" width="70%" top="5vh" append-to-body>
       <div v-if="aiResults.length === 0" class="text-center py-10 text-slate-400">
         暂无 AI 分析结果
       </div>
@@ -643,17 +643,40 @@ const renderMarkdown = (text) => {
 
 const renderedAiContent = computed(() => renderMarkdown(aiStreamContent.value))
 
+// 日期格式化
+const formatTime = (timeStr) => {
+  if (!timeStr) return ''
+  try {
+    return new Date(timeStr).toLocaleString()
+  } catch (e) {
+    return timeStr
+  }
+}
+
 // ===== OCR 结果查看 =====
 const showOcrDialog = ref(false)
 const ocrResults = ref([])
 const currentViewRecord = ref(null)
 
 const viewOcrResults = async (record) => {
+  console.log('=== viewOcrResults START ===')
+  console.log('Record:', record)
   currentViewRecord.value = record
   try {
-    ocrResults.value = await invoke('get_ocr_results', { recordId: record.id })
+    console.log('Invoking get_ocr_results with recordId:', record.id)
+    // 尝试同时传递 recordId 和 record_id 以兼容 Tauri 的参数映射
+    ocrResults.value = await invoke('get_ocr_results', { recordId: record.id, record_id: record.id })
+    console.log('get_ocr_results returned:', ocrResults.value)
+    
+    if (!ocrResults.value) {
+      console.warn('ocrResults is null/undefined')
+      ocrResults.value = []
+    }
+    
     showOcrDialog.value = true
+    console.log('showOcrDialog set to true. Current value:', showOcrDialog.value)
   } catch (e) {
+    console.error('viewOcrResults Error:', e)
     ElMessage.error('加载OCR结果失败: ' + e)
   }
 }

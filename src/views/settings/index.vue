@@ -5,115 +5,105 @@
       <p class="text-slate-500 mt-2">配置 AI 分析接口及医疗检查项目，优化您的健康数据分析体验。</p>
     </header>
 
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-      <!-- 左列：AI 接口设置 -->
-      <section class="space-y-6">
-        <el-card shadow="never" class="!rounded-xl !border-slate-200">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <span class="material-symbols-outlined text-[#2b8cee]">auto_awesome</span>
-                <span class="font-bold text-lg">AI 接口设置</span>
-              </div>
-              <el-tag :type="connectionStatus === 'success' ? 'success' : 'info'" size="small" round>
-                {{ connectionStatus === 'success' ? '已连接' : '未测试' }}
-              </el-tag>
-            </div>
-          </template>
-
-          <el-form :model="aiConfig" label-position="top" class="space-y-1">
-            <el-form-item label="API 接口地址 (URL)">
-              <el-input v-model="aiConfig.apiUrl" placeholder="https://api.openai.com/v1/chat/completions" />
-            </el-form-item>
-
-            <el-form-item label="API Key">
-              <el-input v-model="aiConfig.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="sk-...">
-                <template #suffix>
-                  <el-button link @click="showApiKey = !showApiKey">
-                    <span class="material-symbols-outlined text-sm">{{ showApiKey ? 'visibility_off' : 'visibility' }}</span>
-                  </el-button>
-                </template>
-              </el-input>
-            </el-form-item>
-
-            <el-form-item label="可用模型列表">
-              <div class="w-full">
-                <div class="flex gap-2 mb-2 flex-wrap">
-                  <el-tag v-for="(model, index) in aiConfig.models" :key="index" closable
-                    @close="removeModel(index)" type="primary" class="!rounded-lg">
-                    {{ model }}
-                  </el-tag>
+    <el-tabs v-model="activeTab" class="w-full">
+      <el-tab-pane label="AI 设置" name="ai">
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <!-- AI Config -->
+          <el-card shadow="never" class="!rounded-xl !border-slate-200 h-fit">
+            <template #header>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <span class="material-symbols-outlined text-[#2b8cee]">auto_awesome</span>
+                  <span class="font-bold text-lg">AI 接口设置</span>
                 </div>
-                <div class="flex gap-2">
-                  <el-input v-model="newModel" placeholder="输入模型名称" size="small" @keyup.enter="addModel" />
-                  <el-button size="small" type="primary" @click="addModel">添加</el-button>
-                </div>
-              </div>
-            </el-form-item>
-
-            <el-form-item label="默认模型">
-              <el-select v-model="aiConfig.defaultModel" placeholder="选择默认模型" class="w-full">
-                <el-option v-for="model in aiConfig.models" :key="model" :label="model" :value="model" />
-              </el-select>
-            </el-form-item>
-
-            <el-divider />
-
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h4 class="text-sm font-bold">SOCKS 代理设置</h4>
-                <p class="text-xs text-slate-500">如需访问特定网络，请开启此项</p>
-              </div>
-              <el-switch v-model="aiConfig.proxyEnabled" />
-            </div>
-
-            <template v-if="aiConfig.proxyEnabled">
-              <el-form-item label="代理地址">
-                <el-input v-model="aiConfig.proxyUrl" placeholder="127.0.0.1:7890" />
-              </el-form-item>
-              <div class="grid grid-cols-2 gap-4">
-                <el-form-item label="代理账号">
-                  <el-input v-model="aiConfig.proxyUsername" placeholder="可选" />
-                </el-form-item>
-                <el-form-item label="代理密码">
-                  <el-input v-model="aiConfig.proxyPassword" type="password" placeholder="可选" />
-                </el-form-item>
+                <el-tag :type="connectionStatus === 'success' ? 'success' : 'info'" size="small" round>
+                  {{ connectionStatus === 'success' ? '已连接' : '未测试' }}
+                </el-tag>
               </div>
             </template>
-          </el-form>
-
-          <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
-            <el-button @click="testConnection" :loading="testing">测试连接</el-button>
-            <el-button type="primary" @click="saveAiConfig" :loading="savingAi">保存 AI 配置</el-button>
-          </div>
-        </el-card>
-
-        <!-- Prompt 模板设置 -->
-        <el-card shadow="never" class="!rounded-xl !border-slate-200">
-          <template #header>
-            <div class="flex items-center gap-3">
-              <span class="material-symbols-outlined text-[#2b8cee]">edit_note</span>
-              <span class="font-bold text-lg">Prompt 模板设置</span>
+            <el-form :model="aiConfig" label-position="top" class="space-y-1">
+              <el-form-item label="API 接口地址 (URL)">
+                <el-input v-model="aiConfig.apiUrl" placeholder="https://api.openai.com/v1/chat/completions" />
+              </el-form-item>
+              <el-form-item label="API Key">
+                <el-input v-model="aiConfig.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="sk-...">
+                  <template #suffix>
+                    <el-button link @click="showApiKey = !showApiKey">
+                      <span class="material-symbols-outlined text-sm">{{ showApiKey ? 'visibility_off' : 'visibility' }}</span>
+                    </el-button>
+                  </template>
+                </el-input>
+              </el-form-item>
+              <el-form-item label="可用模型列表">
+                <div class="w-full">
+                  <div class="flex gap-2 mb-2 flex-wrap">
+                    <el-tag v-for="(model, index) in aiConfig.models" :key="index" closable @close="removeModel(index)" type="primary" class="!rounded-lg">
+                      {{ model }}
+                    </el-tag>
+                  </div>
+                  <div class="flex gap-2">
+                    <el-input v-model="newModel" placeholder="输入模型名称" size="small" @keyup.enter="addModel" />
+                    <el-button size="small" type="primary" @click="addModel">添加</el-button>
+                  </div>
+                </div>
+              </el-form-item>
+              <el-form-item label="默认模型">
+                <el-select v-model="aiConfig.defaultModel" placeholder="选择默认模型" class="w-full">
+                  <el-option v-for="model in aiConfig.models" :key="model" :label="model" :value="model" />
+                </el-select>
+              </el-form-item>
+              <el-divider />
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <h4 class="text-sm font-bold">SOCKS 代理设置</h4>
+                  <p class="text-xs text-slate-500">如需访问特定网络，请开启此项</p>
+                </div>
+                <el-switch v-model="aiConfig.proxyEnabled" />
+              </div>
+              <template v-if="aiConfig.proxyEnabled">
+                <el-form-item label="代理地址">
+                  <el-input v-model="aiConfig.proxyUrl" placeholder="127.0.0.1:7890" />
+                </el-form-item>
+                <div class="grid grid-cols-2 gap-4">
+                  <el-form-item label="代理账号">
+                    <el-input v-model="aiConfig.proxyUsername" placeholder="可选" />
+                  </el-form-item>
+                  <el-form-item label="代理密码">
+                    <el-input v-model="aiConfig.proxyPassword" type="password" placeholder="可选" />
+                  </el-form-item>
+                </div>
+              </template>
+            </el-form>
+            <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
+              <el-button @click="testConnection" :loading="testing">测试连接</el-button>
+              <el-button type="primary" @click="saveAiConfig" :loading="savingAi">保存 AI 配置</el-button>
             </div>
-          </template>
-          <el-form label-position="top">
-            <el-form-item label="OCR 识别 Prompt 模板">
-              <el-input v-model="ocrPrompt" type="textarea" :rows="4"
-                placeholder="请识别图片中的医疗检查报告，提取所有检查指标..." />
-            </el-form-item>
-            <el-form-item label="AI 分析 Prompt 模板">
-              <el-input v-model="aiPrompt" type="textarea" :rows="4"
-                placeholder="请根据以下检查数据，分析患者的健康状况..." />
-            </el-form-item>
-          </el-form>
-          <div class="flex justify-end mt-2">
-            <el-button type="primary" @click="savePrompts" :loading="savingPrompt">保存 Prompt 模板</el-button>
-          </div>
-        </el-card>
-      </section>
+          </el-card>
 
-      <!-- 右列：检查项目管理 -->
-      <section class="space-y-6">
+          <!-- Prompt 模板设置 -->
+          <el-card shadow="never" class="!rounded-xl !border-slate-200 h-fit">
+            <template #header>
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[#2b8cee]">edit_note</span>
+                <span class="font-bold text-lg">Prompt 模板设置</span>
+              </div>
+            </template>
+            <el-form label-position="top">
+              <el-form-item label="OCR 识别 Prompt 模板">
+                <el-input v-model="ocrPrompt" type="textarea" :rows="4" placeholder="请识别图片中的医疗检查报告，提取所有检查指标..." />
+              </el-form-item>
+              <el-form-item label="AI 分析 Prompt 模板">
+                <el-input v-model="aiPrompt" type="textarea" :rows="4" placeholder="请根据以下检查数据..." />
+              </el-form-item>
+            </el-form>
+            <div class="flex justify-end mt-2">
+              <el-button type="primary" @click="savePrompts" :loading="savingPrompt">保存 Prompt 模板</el-button>
+            </div>
+          </el-card>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="检查项目" name="project">
         <el-card shadow="never" class="!rounded-xl !border-slate-200">
           <template #header>
             <div class="flex items-center justify-between">
@@ -126,7 +116,6 @@
               </el-button>
             </div>
           </template>
-
           <el-table :data="projects" stripe style="width: 100%" empty-text="暂无检查项目，请点击新增">
             <el-table-column prop="name" label="类别名称" min-width="120">
               <template #default="{ row }">
@@ -145,8 +134,7 @@
             </el-table-column>
             <el-table-column label="状态" width="80" align="center">
               <template #default="{ row }">
-                <el-switch v-model="row.is_active" size="small"
-                  @change="toggleProject(row)" />
+                <el-switch v-model="row.is_active" size="small" @change="toggleProject(row)" />
               </template>
             </el-table-column>
             <el-table-column label="操作" width="140" align="right">
@@ -164,50 +152,47 @@
             </el-table-column>
           </el-table>
         </el-card>
-      </section>
-    </div>
+      </el-tab-pane>
 
-    <!-- 数据重置与维护 -->
-    <section class="mt-8">
-      <el-card shadow="never" class="!rounded-xl !border-slate-200 border-red-50">
-          <template #header>
+      <el-tab-pane label="数据管理" name="data">
+        <el-card shadow="never" class="!rounded-xl !border-slate-200 border-red-50">
+            <template #header>
             <div class="flex items-center gap-3 text-red-600">
-              <span class="material-symbols-outlined">delete_forever</span>
-              <span class="font-bold text-lg">数据重置与维护</span>
+                <span class="material-symbols-outlined">delete_forever</span>
+                <span class="font-bold text-lg">数据重置与维护</span>
             </div>
-          </template>
-          
-          <div class="grid md:grid-cols-2 gap-12 px-2">
+            </template>
+            <div class="grid md:grid-cols-2 gap-12 px-2">
             <div>
                 <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                  <span class="material-symbols-outlined text-amber-500">history</span>
-                  重置检查数据
+                    <span class="material-symbols-outlined text-amber-500">history</span>
+                    重置检查数据
                 </h4>
                 <p class="text-sm text-slate-500 mb-6 leading-relaxed">
-                  将删除所有历史上传的检查报告图片（仅限程序目录下的 pictures 文件夹）、OCR 识别记录、AI 分析报告以及趋势数据。
-                  <br><span class="text-xs text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded mt-1 inline-block">警告：此操作不可恢复！</span>
+                    将删除所有历史上传的检查报告图片（仅限程序目录下的 pictures 文件夹）、OCR 识别记录、AI 分析报告以及趋势数据。
+                    <br><span class="text-xs text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded mt-1 inline-block">警告：此操作不可恢复！</span>
                 </p>
                 <el-button type="danger" plain @click="handleResetCheckupData">
-                  重置检查数据
+                    重置检查数据
                 </el-button>
             </div>
-
             <div>
                 <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                  <span class="material-symbols-outlined text-red-600">restart_alt</span>
-                  重置全部数据 (恢复出厂)
+                    <span class="material-symbols-outlined text-red-600">restart_alt</span>
+                    重置全部数据 (恢复出厂)
                 </h4>
                 <p class="text-sm text-slate-500 mb-6 leading-relaxed">
-                  除了清除所有检查数据外，还会删除自定义的检查项目和指标设置，将系统恢复到初始状态。
-                  <br><span class="text-xs text-red-600 font-bold bg-red-100 px-2 py-0.5 rounded mt-1 inline-block">严重警告：所有数据将永久丢失！</span>
+                    除了清除所有检查数据外，还会删除自定义的检查项目和指标设置，将系统恢复到初始状态。
+                    <br><span class="text-xs text-red-600 font-bold bg-red-100 px-2 py-0.5 rounded mt-1 inline-block">严重警告：所有数据将永久丢失！</span>
                 </p>
                 <el-button type="danger" @click="handleResetAllData">
-                  重置全部数据 (慎用)
+                    重置全部数据 (慎用)
                 </el-button>
             </div>
-          </div>
-      </el-card>
-    </section>
+            </div>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 新增/编辑项目弹窗 -->
     <el-dialog v-model="showProjectDialog" :title="editingProject ? '编辑检查项目' : '新增检查项目'" width="420px" :close-on-click-modal="false">
@@ -283,6 +268,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 // ===== AI 配置 =====
+const activeTab = ref('ai')
 const showApiKey = ref(false)
 const connectionStatus = ref('unknown')
 const testing = ref(false)
