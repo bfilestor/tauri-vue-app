@@ -118,6 +118,16 @@
         </el-card>
       </el-timeline-item>
     </el-timeline>
+
+    <div v-if="!loading && hasMore && records.length > 0" class="text-center py-6">
+        <el-button :loading="moreLoading" @click="handleLoadMore" type="primary" plain round>
+            加载更多记录 <span class="material-symbols-outlined ml-1 text-sm">expand_more</span>
+        </el-button>
+    </div>
+    
+    <div v-if="!loading && !hasMore && records.length > 0" class="text-center py-8 text-slate-400 text-sm">
+        — 已显示全部记录 —
+    </div>
   </div>
 </template>
 
@@ -128,31 +138,74 @@ import { ElMessage } from 'element-plus'
 
 // ===== 历史记录 =====
 const records = ref([])
-const loading = ref(true)
+const loading = ref(false)
+const moreLoading = ref(false)
+const currentPage = ref(1)
+const pageSize = 10
+const hasMore = ref(true)
 
-const loadData = async () => {
-  loading.value = true
+const loadData = async (reset = false) => {
+  if (reset) {
+    loading.value = true
+    currentPage.value = 1
+    hasMore.value = true
+    records.value = []
+  } else {
+    moreLoading.value = true
+  }
+
   try {
-    const data = await invoke('get_history_timeline')
-    records.value = data.map((item, index) => ({
+    const offset = (currentPage.value - 1) * pageSize
+    const data = await invoke('get_history_timeline', { 
+        limit: pageSize, 
+        offset: offset 
+    })
+    
+    const mappedData = data.map((item) => ({
       ...item,
-      isExpanded: index === 0, // 默认展开第一条
+      isExpanded: false, 
       aiExpanded: false
     }))
+    
+    if (data.length < pageSize) {
+        hasMore.value = false
+    }
+
+    if (reset) {
+        if (mappedData.length > 0) mappedData[0].isExpanded = true
+        records.value = mappedData
+    } else {
+        records.value = [...records.value, ...mappedData]
+    }
+    
+    // Only increment page if we got data, or if it's the first empty page (to avoid infinite loop if logic changes)
+    // Actually, simply incrementing is fine as offset depends on it. 
+    // If we got 0 items, next request will use same offset if we don't increment, 
+    // but we set hasMore=false so we won't request again.
+    // If we got < pageSize, hasMore=false.
+    if (data.length > 0) {
+        currentPage.value++
+    }
+
   } catch (error) {
     ElMessage.error('加载历史记录失败: ' + error)
     console.error(error)
   } finally {
     loading.value = false
+    moreLoading.value = false
   }
 }
 
+const handleLoadMore = () => {
+    loadData(false)
+}
+
 onMounted(() => {
-  loadData()
+  loadData(true)
 })
 
 onActivated(() => {
-  loadData()
+  loadData(true)
 })
 
 const getStatusColor = (record) => {

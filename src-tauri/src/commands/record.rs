@@ -181,18 +181,22 @@ pub struct AbnormalItem {
 }
 
 #[tauri::command]
-pub fn get_history_timeline(db: State<Database>) -> Result<Vec<HistoryTimelineItem>, String> {
+pub fn get_history_timeline(limit: Option<i64>, offset: Option<i64>, db: State<Database>) -> Result<Vec<HistoryTimelineItem>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     
-    // 1. 获取所有检查记录
+    let limit_val = limit.unwrap_or(10);
+    let offset_val = offset.unwrap_or(0);
+
+    // 1. 获取分页检查记录
     let mut stmt = conn.prepare(
         "SELECT id, checkup_date, status, notes 
          FROM checkup_records 
-         ORDER BY checkup_date DESC"
+         ORDER BY checkup_date DESC, created_at DESC
+         LIMIT ?1 OFFSET ?2"
     ).map_err(|e| format!("查询记录失败: {}", e))?;
     
-    let records = stmt.query_map([], |row| {
+    let records = stmt.query_map([limit_val, offset_val], |row| {
         Ok((
             row.get::<_, String>(0)?, // id
             row.get::<_, String>(1)?, // date
