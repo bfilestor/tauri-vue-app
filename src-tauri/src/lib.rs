@@ -1,15 +1,18 @@
-mod db;
 mod commands;
+mod db;
 mod services;
 
-use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 
 /// 获取应用数据目录（程序所在目录）
 fn get_app_data_dir(_app: &AppHandle) -> PathBuf {
     // 使用程序所在目录作为数据存储根目录
     let exe_path = std::env::current_exe().unwrap_or_default();
-    exe_path.parent().unwrap_or(&PathBuf::from(".")).to_path_buf()
+    exe_path
+        .parent()
+        .unwrap_or(&PathBuf::from("."))
+        .to_path_buf()
 }
 
 /// 确保 pictures 目录存在
@@ -21,6 +24,7 @@ fn ensure_pictures_dir(app_dir: &PathBuf) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = show_window(app);
         }))
@@ -83,8 +87,7 @@ pub fn run() {
             let app_dir = get_app_data_dir(app.handle());
             ensure_pictures_dir(&app_dir);
 
-            let database = db::Database::new(app_dir.clone())
-                .expect("数据库初始化失败");
+            let database = db::Database::new(app_dir.clone()).expect("数据库初始化失败");
 
             // 将数据库实例和 app_dir 注入到 Tauri 状态
             app.manage(database);

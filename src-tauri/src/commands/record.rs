@@ -1,6 +1,6 @@
+use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::db::Database;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckupRecord {
@@ -32,10 +32,14 @@ pub struct UpdateRecordInput {
 
 /// 查询全部检查记录（倒序），支持分页
 #[tauri::command]
-pub fn list_records(limit: Option<i64>, offset: Option<i64>, db: State<Database>) -> Result<Vec<CheckupRecord>, String> {
+pub fn list_records(
+    limit: Option<i64>,
+    offset: Option<i64>,
+    db: State<Database>,
+) -> Result<Vec<CheckupRecord>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    
+
     let limit_val = limit.unwrap_or(1000); // Default to a large number if not specified to maintain "list all" behavior roughly, or just update callers
     let offset_val = offset.unwrap_or(0);
 
@@ -45,23 +49,26 @@ pub fn list_records(limit: Option<i64>, offset: Option<i64>, db: State<Database>
                     (SELECT COUNT(*) FROM checkup_files WHERE record_id = r.id) as file_count
              FROM checkup_records r
              ORDER BY r.checkup_date DESC, r.created_at DESC
-             LIMIT ?1 OFFSET ?2"
+             LIMIT ?1 OFFSET ?2",
         )
         .map_err(|e| format!("查询检查记录失败: {}", e))?;
 
     let records = stmt
         .query_map([limit_val, offset_val], |row| {
             let record_id: String = row.get(0)?;
-            Ok((record_id.clone(), CheckupRecord {
-                id: record_id,
-                checkup_date: row.get(1)?,
-                status: row.get(2)?,
-                notes: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-                file_count: Some(row.get(6)?),
-                project_names: None,
-            }))
+            Ok((
+                record_id.clone(),
+                CheckupRecord {
+                    id: record_id,
+                    checkup_date: row.get(1)?,
+                    status: row.get(2)?,
+                    notes: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                    file_count: Some(row.get(6)?),
+                    project_names: None,
+                },
+            ))
         })
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
@@ -74,7 +81,7 @@ pub fn list_records(limit: Option<i64>, offset: Option<i64>, db: State<Database>
             .prepare(
                 "SELECT DISTINCT p.name FROM checkup_files f
                  JOIN checkup_projects p ON f.project_id = p.id
-                 WHERE f.record_id = ?1"
+                 WHERE f.record_id = ?1",
             )
             .map_err(|e| format!("查询项目名称失败: {}", e))?;
         let names: Vec<String> = pstmt
@@ -91,7 +98,10 @@ pub fn list_records(limit: Option<i64>, offset: Option<i64>, db: State<Database>
 
 /// 创建检查记录
 #[tauri::command]
-pub fn create_record(input: CreateRecordInput, db: State<Database>) -> Result<CheckupRecord, String> {
+pub fn create_record(
+    input: CreateRecordInput,
+    db: State<Database>,
+) -> Result<CheckupRecord, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
@@ -124,11 +134,19 @@ pub fn update_record(input: UpdateRecordInput, db: State<Database>) -> Result<bo
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
 
-    let existing = conn.query_row(
-        "SELECT checkup_date, notes, status FROM checkup_records WHERE id = ?1",
-        [&input.id],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
-    ).map_err(|e| format!("记录不存在: {}", e))?;
+    let existing = conn
+        .query_row(
+            "SELECT checkup_date, notes, status FROM checkup_records WHERE id = ?1",
+            [&input.id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("记录不存在: {}", e))?;
 
     let date = input.checkup_date.unwrap_or(existing.0);
     let notes = input.notes.unwrap_or(existing.1);
@@ -186,64 +204,79 @@ pub struct AbnormalItem {
 }
 
 #[tauri::command]
-pub fn get_history_timeline(limit: Option<i64>, offset: Option<i64>, db: State<Database>) -> Result<Vec<HistoryTimelineItem>, String> {
+pub fn get_history_timeline(
+    limit: Option<i64>,
+    offset: Option<i64>,
+    db: State<Database>,
+) -> Result<Vec<HistoryTimelineItem>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    
+
     let limit_val = limit.unwrap_or(10);
     let offset_val = offset.unwrap_or(0);
 
     // 1. 获取分页检查记录
-    let mut stmt = conn.prepare(
-        "SELECT id, checkup_date, status, notes 
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, checkup_date, status, notes 
          FROM checkup_records 
          ORDER BY checkup_date DESC, created_at DESC
-         LIMIT ?1 OFFSET ?2"
-    ).map_err(|e| format!("查询记录失败: {}", e))?;
-    
-    let records = stmt.query_map([limit_val, offset_val], |row| {
-        Ok((
-            row.get::<_, String>(0)?, // id
-            row.get::<_, String>(1)?, // date
-            row.get::<_, String>(2)?, // status
-            row.get::<_, String>(3)?, // notes
-        ))
-    }).map_err(|e| format!("查询失败: {}", e))?
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| format!("解析失败: {}", e))?;
+         LIMIT ?1 OFFSET ?2",
+        )
+        .map_err(|e| format!("查询记录失败: {}", e))?;
+
+    let records = stmt
+        .query_map([limit_val, offset_val], |row| {
+            Ok((
+                row.get::<_, String>(0)?, // id
+                row.get::<_, String>(1)?, // date
+                row.get::<_, String>(2)?, // status
+                row.get::<_, String>(3)?, // notes
+            ))
+        })
+        .map_err(|e| format!("查询失败: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("解析失败: {}", e))?;
 
     let mut result = Vec::new();
 
     for (id, date, status, notes) in records {
         // 2. 获取该记录的异常指标 (通过 OCR 结果)
         let mut abnormal_items = Vec::new();
-        let mut ocr_stmt = conn.prepare(
-             "SELECT o.parsed_items, p.name 
+        let mut ocr_stmt = conn
+            .prepare(
+                "SELECT o.parsed_items, p.name 
               FROM ocr_results o
               LEFT JOIN checkup_projects p ON o.project_id = p.id
-              WHERE o.record_id = ?1 AND o.status = 'success'"
-        ).map_err(|e| format!("查询OCR失败: {}", e))?;
-        
-        let ocr_rows = ocr_stmt.query_map([&id], |row| {
-             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1).unwrap_or_default()))
-        }).map_err(|e| format!("查询OCR失败: {}", e))?;
-        
+              WHERE o.record_id = ?1 AND o.status = 'success'",
+            )
+            .map_err(|e| format!("查询OCR失败: {}", e))?;
+
+        let ocr_rows = ocr_stmt
+            .query_map([&id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1).unwrap_or_default(),
+                ))
+            })
+            .map_err(|e| format!("查询OCR失败: {}", e))?;
+
         for row in ocr_rows {
-             if let Ok((json, project_name)) = row {
-                 if let Ok(items) = serde_json::from_str::<Vec<OcrParsedItem>>(&json) {
-                     for item in items {
-                         if item.is_abnormal {
-                             abnormal_items.push(AbnormalItem {
-                                 project_name: project_name.clone(),
-                                 name: item.name,
-                                 value: item.value,
-                                 unit: item.unit,
-                                 reference_range: item.reference_range,
-                             });
-                         }
-                     }
-                 }
-             }
+            if let Ok((json, project_name)) = row {
+                if let Ok(items) = serde_json::from_str::<Vec<OcrParsedItem>>(&json) {
+                    for item in items {
+                        if item.is_abnormal {
+                            abnormal_items.push(AbnormalItem {
+                                project_name: project_name.clone(),
+                                name: item.name,
+                                value: item.value,
+                                unit: item.unit,
+                                reference_range: item.reference_range,
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         // 3. 获取最新的 AI 分析结果
@@ -271,31 +304,33 @@ pub fn get_record(id: String, db: State<Database>) -> Result<CheckupRecord, Stri
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
-    let mut record = conn.query_row(
-        "SELECT id, checkup_date, status, notes, created_at, updated_at,
+    let mut record = conn
+        .query_row(
+            "SELECT id, checkup_date, status, notes, created_at, updated_at,
                 (SELECT COUNT(*) FROM checkup_files WHERE record_id = ?1) as file_count
          FROM checkup_records WHERE id = ?1",
-        [&id],
-        |row| {
-            Ok(CheckupRecord {
-                id: row.get(0)?,
-                checkup_date: row.get(1)?,
-                status: row.get(2)?,
-                notes: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-                file_count: Some(row.get(6)?),
-                project_names: None,
-            })
-        },
-    ).map_err(|e| format!("记录不存在: {}", e))?;
+            [&id],
+            |row| {
+                Ok(CheckupRecord {
+                    id: row.get(0)?,
+                    checkup_date: row.get(1)?,
+                    status: row.get(2)?,
+                    notes: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                    file_count: Some(row.get(6)?),
+                    project_names: None,
+                })
+            },
+        )
+        .map_err(|e| format!("记录不存在: {}", e))?;
 
     // 查询关联项目名称
     let mut pstmt = conn
         .prepare(
             "SELECT DISTINCT p.name FROM checkup_files f
              JOIN checkup_projects p ON f.project_id = p.id
-             WHERE f.record_id = ?1"
+             WHERE f.record_id = ?1",
         )
         .map_err(|e| format!("查询失败: {}", e))?;
     let names: Vec<String> = pstmt
@@ -311,7 +346,7 @@ pub fn get_record(id: String, db: State<Database>) -> Result<CheckupRecord, Stri
 #[tauri::command]
 pub fn get_or_create_today_record(db: State<Database>) -> Result<CheckupRecord, String> {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    
+
     // 1. 尝试查找今天的记录
     let existing_id: Option<String> = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
@@ -320,7 +355,8 @@ pub fn get_or_create_today_record(db: State<Database>) -> Result<CheckupRecord, 
             "SELECT id FROM checkup_records WHERE checkup_date = ?1 LIMIT 1",
             [&today],
             |row| row.get(0),
-        ).ok()
+        )
+        .ok()
     };
 
     if let Some(id) = existing_id {

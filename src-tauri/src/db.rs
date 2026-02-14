@@ -35,10 +35,12 @@ impl Database {
     pub fn reopen(&self) -> Result<(), String> {
         let mut conn_guard = self.conn.lock().map_err(|e| e.to_string())?;
         if conn_guard.is_none() {
-             let conn = Connection::open(&self.db_path).map_err(|e| e.to_string())?;
-             conn.execute_batch("PRAGMA journal_mode=WAL;").map_err(|e| e.to_string())?;
-             conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e| e.to_string())?;
-             *conn_guard = Some(conn);
+            let conn = Connection::open(&self.db_path).map_err(|e| e.to_string())?;
+            conn.execute_batch("PRAGMA journal_mode=WAL;")
+                .map_err(|e| e.to_string())?;
+            conn.execute_batch("PRAGMA foreign_keys=ON;")
+                .map_err(|e| e.to_string())?;
+            *conn_guard = Some(conn);
         }
         Ok(())
     }
@@ -160,7 +162,7 @@ impl Database {
                 content         TEXT NOT NULL,
                 created_at      TEXT NOT NULL
             );
-            "
+            ",
         )?;
         Ok(())
     }

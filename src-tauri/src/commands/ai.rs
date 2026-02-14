@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use crate::commands::ocr::OcrParsedItem;
 use crate::db::Database;
 use crate::services::http_client;
-use crate::commands::ocr::OcrParsedItem;
+use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AiAnalysis {
@@ -23,8 +23,8 @@ pub async fn start_ai_analysis(
     app: tauri::AppHandle,
     db: tauri::State<'_, Database>,
 ) -> Result<String, String> {
-    use tauri::Emitter;
     use futures_util::StreamExt;
+    use tauri::Emitter;
 
     // 1. 收集数据：当前 OCR 结果 + 历史数据
     let (config, model, ai_prompt, prompt_data, analysis_id) = {
@@ -62,7 +62,7 @@ pub async fn start_ai_analysis(
                  FROM ocr_results o
                  LEFT JOIN checkup_projects p ON o.project_id = p.id
                  WHERE o.record_id = ?1 AND o.status = 'success'
-                 ORDER BY p.name ASC"
+                 ORDER BY p.name ASC",
             )
             .map_err(|e| format!("查询OCR结果失败: {}", e))?;
 
@@ -84,12 +84,14 @@ pub async fn start_ai_analysis(
 
         // 收集历史检查数据（最近3次有结果的记录）
         // 1. 获取最近 3 次其他检查记录ID
-        let mut hist_rec_stmt = conn.prepare(
-            "SELECT id, checkup_date FROM checkup_records 
+        let mut hist_rec_stmt = conn
+            .prepare(
+                "SELECT id, checkup_date FROM checkup_records 
              WHERE id != ?1 
-             ORDER BY checkup_date DESC LIMIT 3"
-        ).map_err(|e| format!("查询历史记录失败: {}", e))?;
-        
+             ORDER BY checkup_date DESC LIMIT 3",
+            )
+            .map_err(|e| format!("查询历史记录失败: {}", e))?;
+
         let history_records: Vec<(String, String)> = hist_rec_stmt
             .query_map([&record_id], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| format!("查询历史记录失败: {}", e))?
@@ -99,48 +101,64 @@ pub async fn start_ai_analysis(
         // 2. 收集这 3 次的历史异常数据
         let mut history_parts = Vec::new();
         for (hist_id, hist_date) in history_records {
-             let mut ocr_stmt = conn.prepare(
-                 "SELECT o.parsed_items, p.name 
+            let mut ocr_stmt = conn
+                .prepare(
+                    "SELECT o.parsed_items, p.name 
                   FROM ocr_results o
                   LEFT JOIN checkup_projects p ON o.project_id = p.id
-                  WHERE o.record_id = ?1 AND o.status = 'success'"
-             ).map_err(|e| format!("查询历史OCR失败: {}", e))?;
-             
-             let ocr_data: Vec<(String, String)> = ocr_stmt.query_map([&hist_id], |row| {
-                 Ok((row.get(0)?, row.get(1).unwrap_or_default()))
-             }).map_err(|e| format!("查询历史OCR失败: {}", e))?
-             .collect::<Result<Vec<_>, _>>()
-             .unwrap_or_default();
-             
-             let mut abnormal_items = Vec::new();
-             for (json_str, proj_name) in ocr_data {
-                 if let Ok(items) = serde_json::from_str::<Vec<OcrParsedItem>>(&json_str) {
-                     for item in items {
-                         if item.is_abnormal {
-                             abnormal_items.push(format!("- [{}] {}: {} {} (参考: {})", proj_name, item.name, item.value, item.unit, item.reference_range));
-                         }
-                     }
-                 }
-             }
-             
-             if !abnormal_items.is_empty() {
-                 history_parts.push(format!("### 日期: {}\n{}", hist_date, abnormal_items.join("\n")));
-             }
+                  WHERE o.record_id = ?1 AND o.status = 'success'",
+                )
+                .map_err(|e| format!("查询历史OCR失败: {}", e))?;
+
+            let ocr_data: Vec<(String, String)> = ocr_stmt
+                .query_map([&hist_id], |row| {
+                    Ok((row.get(0)?, row.get(1).unwrap_or_default()))
+                })
+                .map_err(|e| format!("查询历史OCR失败: {}", e))?
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap_or_default();
+
+            let mut abnormal_items = Vec::new();
+            for (json_str, proj_name) in ocr_data {
+                if let Ok(items) = serde_json::from_str::<Vec<OcrParsedItem>>(&json_str) {
+                    for item in items {
+                        if item.is_abnormal {
+                            abnormal_items.push(format!(
+                                "- [{}] {}: {} {} (参考: {})",
+                                proj_name, item.name, item.value, item.unit, item.reference_range
+                            ));
+                        }
+                    }
+                }
+            }
+
+            if !abnormal_items.is_empty() {
+                history_parts.push(format!(
+                    "### 日期: {}\n{}",
+                    hist_date,
+                    abnormal_items.join("\n")
+                ));
+            }
         }
 
         // 3. 获取上一次成功的 AI 分析建议
-        let last_ai_suggestion: Option<String> = conn.query_row(
-            "SELECT response_content FROM ai_analyses a 
+        let last_ai_suggestion: Option<String> = conn
+            .query_row(
+                "SELECT response_content FROM ai_analyses a 
              JOIN checkup_records r ON a.record_id = r.id
              WHERE r.id != ?1 AND a.status = 'success'
              ORDER BY r.checkup_date DESC, a.created_at DESC LIMIT 1",
-            [&record_id], 
-            |row| row.get(0)
-        ).ok();
+                [&record_id],
+                |row| row.get(0),
+            )
+            .ok();
 
         // 组装完整的 Prompt 数据
         let mut prompt_parts = Vec::new();
-        prompt_parts.push(format!("## 1. 本次检查结果（检查日期: {}）\n", checkup_date));
+        prompt_parts.push(format!(
+            "## 1. 本次检查结果（检查日期: {}）\n",
+            checkup_date
+        ));
 
         for (parsed_items, project_name, _date) in &current_data {
             prompt_parts.push(format!("### {}\n", project_name));
@@ -151,11 +169,11 @@ pub async fn start_ai_analysis(
             prompt_parts.push("\n## 2. 近期历史异常记录（仅供参考对比）\n".to_string());
             prompt_parts.push(history_parts.join("\n"));
         }
-        
+
         if let Some(suggestion) = last_ai_suggestion {
             if !suggestion.trim().is_empty() {
-                 prompt_parts.push("\n## 3. 上次 AI 分析建议（仅供参考）\n".to_string());
-                 prompt_parts.push(format!("{}\n", suggestion));
+                prompt_parts.push("\n## 3. 上次 AI 分析建议（仅供参考）\n".to_string());
+                prompt_parts.push(format!("{}\n", suggestion));
             }
         }
 
@@ -176,7 +194,8 @@ pub async fn start_ai_analysis(
         conn.execute(
             "UPDATE checkup_records SET status = 'ai_processing', updated_at = ?1 WHERE id = ?2",
             rusqlite::params![now, record_id],
-        ).ok();
+        )
+        .ok();
 
         (config, model, ai_prompt, prompt_data, analysis_id)
     };
@@ -269,11 +288,15 @@ pub async fn start_ai_analysis(
                         if let Some(content) = data["choices"][0]["delta"]["content"].as_str() {
                             full_content.push_str(content);
                             // 发送流式 chunk 事件
-                            app.emit("ai_stream_chunk", serde_json::json!({
-                                "record_id": record_id_clone,
-                                "analysis_id": analysis_id_clone,
-                                "content": content,
-                            })).ok();
+                            app.emit(
+                                "ai_stream_chunk",
+                                serde_json::json!({
+                                    "record_id": record_id_clone,
+                                    "analysis_id": analysis_id_clone,
+                                    "content": content,
+                                }),
+                            )
+                            .ok();
                         }
                     }
                 }
@@ -284,14 +307,14 @@ pub async fn start_ai_analysis(
         if let Some(db_state) = app.try_state::<Database>() {
             if let Ok(conn_guard) = db_state.conn.lock() {
                 if let Some(conn) = conn_guard.as_ref() {
-                let now = chrono::Local::now().to_rfc3339();
+                    let now = chrono::Local::now().to_rfc3339();
 
-                let _: Result<usize, _> = conn.execute(
+                    let _: Result<usize, _> = conn.execute(
                     "UPDATE ai_analyses SET response_content = ?1, status = 'success', error_message = '' WHERE id = ?2",
                     rusqlite::params![full_content, analysis_id_clone],
                 );
 
-                let _: Result<usize, _> = conn.execute(
+                    let _: Result<usize, _> = conn.execute(
                     "UPDATE checkup_records SET status = 'ai_done', updated_at = ?1 WHERE id = ?2",
                     rusqlite::params![now, record_id_clone],
                 );
@@ -300,10 +323,14 @@ pub async fn start_ai_analysis(
         }
 
         // 发送完成事件
-        app.emit("ai_stream_done", serde_json::json!({
-            "record_id": record_id_clone,
-            "analysis_id": analysis_id_clone,
-        })).ok();
+        app.emit(
+            "ai_stream_done",
+            serde_json::json!({
+                "record_id": record_id_clone,
+                "analysis_id": analysis_id_clone,
+            }),
+        )
+        .ok();
     });
 
     Ok(analysis_id)
@@ -311,7 +338,10 @@ pub async fn start_ai_analysis(
 
 /// 获取 AI 分析结果
 #[tauri::command]
-pub fn get_ai_analysis(record_id: String, db: tauri::State<Database>) -> Result<Vec<AiAnalysis>, String> {
+pub fn get_ai_analysis(
+    record_id: String,
+    db: tauri::State<Database>,
+) -> Result<Vec<AiAnalysis>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
@@ -350,26 +380,30 @@ fn update_ai_error(app: &tauri::AppHandle, analysis_id: &str, record_id: &str, e
     if let Some(db_state) = app.try_state::<Database>() {
         if let Ok(conn_guard) = db_state.conn.lock() {
             if let Some(conn) = conn_guard.as_ref() {
-            let now = chrono::Local::now().to_rfc3339();
+                let now = chrono::Local::now().to_rfc3339();
 
-            let _: Result<usize, _> = conn.execute(
-                "UPDATE ai_analyses SET status = 'failed', error_message = ?1 WHERE id = ?2",
-                rusqlite::params![error, analysis_id],
-            );
+                let _: Result<usize, _> = conn.execute(
+                    "UPDATE ai_analyses SET status = 'failed', error_message = ?1 WHERE id = ?2",
+                    rusqlite::params![error, analysis_id],
+                );
 
-            let _: Result<usize, _> = conn.execute(
-                "UPDATE checkup_records SET status = 'ocr_done', updated_at = ?1 WHERE id = ?2",
-                rusqlite::params![now, record_id],
-            );
+                let _: Result<usize, _> = conn.execute(
+                    "UPDATE checkup_records SET status = 'ocr_done', updated_at = ?1 WHERE id = ?2",
+                    rusqlite::params![now, record_id],
+                );
             }
         }
     }
 
-    app.emit("ai_stream_error", serde_json::json!({
-        "record_id": record_id,
-        "analysis_id": analysis_id,
-        "error": error,
-    })).ok();
+    app.emit(
+        "ai_stream_error",
+        serde_json::json!({
+            "record_id": record_id,
+            "analysis_id": analysis_id,
+            "error": error,
+        }),
+    )
+    .ok();
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -501,8 +535,8 @@ pub async fn chat_with_ai(
     app: tauri::AppHandle,
     db: tauri::State<'_, Database>,
 ) -> Result<String, String> {
-    use tauri::Emitter;
     use futures_util::StreamExt;
+    use tauri::Emitter;
 
     // 1. 获取配置和上下文
     let (config, model, chat_history) = {
@@ -513,15 +547,18 @@ pub async fn chat_with_ai(
         let model = http_client::get_default_model(&conn);
 
         // 获取最近 10 条历史记录作为上下文
-        let mut stmt = conn.prepare("SELECT role, content FROM chat_logs ORDER BY created_at DESC, role ASC LIMIT 10")
+        let mut stmt = conn
+            .prepare(
+                "SELECT role, content FROM chat_logs ORDER BY created_at DESC, role ASC LIMIT 10",
+            )
             .map_err(|e| e.to_string())?;
-        
-        let mut history: Vec<(String, String)> = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        }).map_err(|e| e.to_string())?
-          .collect::<Result<Vec<_>, _>>()
-          .map_err(|e| e.to_string())?;
-          
+
+        let mut history: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
         history.reverse(); // 恢复时间顺序
         (config, model, history)
     };
@@ -532,16 +569,17 @@ pub async fn chat_with_ai(
 
     // 2. 保存用户消息
     {
-         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-         
-         conn.execute(
-             "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'user', ?2, ?3)",
-             rusqlite::params![user_msg_id, message, now],
-         ).map_err(|e| e.to_string())?;
-         
-         // 预创建 AI 回复记录 (content empty)
-         conn.execute(
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+
+        conn.execute(
+            "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'user', ?2, ?3)",
+            rusqlite::params![user_msg_id, message, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // 预创建 AI 回复记录 (content empty)
+        conn.execute(
              "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'assistant', '', ?2)",
              rusqlite::params![ai_msg_id, now],
          ).map_err(|e| e.to_string())?;
@@ -567,14 +605,14 @@ pub async fn chat_with_ai(
     });
 
     let ai_msg_id_clone = ai_msg_id.clone();
-    
+
     // 4. 发送请求
     tokio::spawn(async move {
         let client = match http_client::build_client(&config) {
             Ok(c) => c,
             Err(e) => {
-                 app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("Client Error: {}", e)})).ok();
-                 return;
+                app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("Client Error: {}", e)})).ok();
+                return;
             }
         };
 
@@ -584,18 +622,18 @@ pub async fn chat_with_ai(
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
-            .await 
+            .await
         {
             Ok(r) => r,
-             Err(e) => {
-                 app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("Request Error: {}", e)})).ok();
-                 return;
+            Err(e) => {
+                app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("Request Error: {}", e)})).ok();
+                return;
             }
         };
 
         if !response.status().is_success() {
-             app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("API Error: {}", response.status())})).ok();
-             return;
+            app.emit("chat_stream_error", serde_json::json!({"id": ai_msg_id_clone, "error": format!("API Error: {}", response.status())})).ok();
+            return;
         }
 
         let mut stream = response.bytes_stream();
@@ -608,7 +646,7 @@ pub async fn chat_with_ai(
                 Ok(c) => c,
                 Err(_) => break,
             };
-            
+
             let chunk_str = String::from_utf8_lossy(&chunk);
             buffer.push_str(&chunk_str);
 
@@ -616,18 +654,24 @@ pub async fn chat_with_ai(
                 let line = buffer[..line_end].trim().to_string();
                 buffer = buffer[line_end + 1..].to_string();
 
-                if line.is_empty() || line == "data: [DONE]" { continue; }
+                if line.is_empty() || line == "data: [DONE]" {
+                    continue;
+                }
 
                 if let Some(json_str) = line.strip_prefix("data: ") {
-                     if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
                         if let Some(content) = data["choices"][0]["delta"]["content"].as_str() {
                             full_response_content.push_str(content);
-                            app.emit("chat_stream_chunk", serde_json::json!({
-                                "id": ai_msg_id_clone,
-                                "content": content
-                            })).ok();
+                            app.emit(
+                                "chat_stream_chunk",
+                                serde_json::json!({
+                                    "id": ai_msg_id_clone,
+                                    "content": content
+                                }),
+                            )
+                            .ok();
                         }
-                     }
+                    }
                 }
             }
         }
@@ -643,8 +687,12 @@ pub async fn chat_with_ai(
                 }
             }
         }
-        
-        app.emit("chat_stream_done", serde_json::json!({"id": ai_msg_id_clone})).ok();
+
+        app.emit(
+            "chat_stream_done",
+            serde_json::json!({"id": ai_msg_id_clone}),
+        )
+        .ok();
     });
 
     Ok(ai_msg_id)

@@ -95,13 +95,27 @@
 
 ---
 
+---
+
+## Epic 7：数据脱敏模块
+
+| Issue | 描述 | 状态 | 依赖 | 测试 | 备注 |
+|-------|------|------|------|------|------|
+| ISS-041 | [前端] Canvas 图片编辑器组件基础 | Done | - | Passed | 基础 Canvas 封装 + 缩放/平移 |
+| ISS-042 | [前端] 裁剪功能实现 | Done | ISS-041 | Passed | 矩形裁剪 + 确认/取消 |
+| ISS-043 | [前端] 区域马赛克功能 | Done | ISS-041 | Passed | 像素化模糊 |
+| ISS-044 | [前端] 脱敏工作台页面 (`/desensitize`) | Done | ISS-041 | Passed | 布局/路由/工具栏 |
+| ISS-045 | [前端] 文件 IO 集成 (Open/Save) | Done | ISS-044 | Passed | fs/dialog 插件集成 |
+
+---
+
 ## 汇总统计
 
 | 状态 | 数量 |
 |------|------|
-| Todo | 5 |
+| Todo | 0 |
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
-| Done | 33 |
-| **合计** | **38** |
+| Done | 43 |
+| **合计** | **43** |

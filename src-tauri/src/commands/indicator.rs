@@ -1,6 +1,6 @@
+use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::db::Database;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Indicator {
@@ -40,7 +40,7 @@ pub fn list_indicators(project_id: String, db: State<Database>) -> Result<Vec<In
     let mut stmt = conn
         .prepare(
             "SELECT id, project_id, name, unit, reference_range, sort_order, is_core, created_at
-             FROM indicators WHERE project_id = ?1 ORDER BY sort_order ASC, created_at ASC"
+             FROM indicators WHERE project_id = ?1 ORDER BY sort_order ASC, created_at ASC",
         )
         .map_err(|e| format!("查询指标失败: {}", e))?;
 
@@ -65,7 +65,10 @@ pub fn list_indicators(project_id: String, db: State<Database>) -> Result<Vec<In
 }
 
 #[tauri::command]
-pub fn create_indicator(input: CreateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
+pub fn create_indicator(
+    input: CreateIndicatorInput,
+    db: State<Database>,
+) -> Result<Indicator, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let now = chrono::Local::now().to_rfc3339();
@@ -94,27 +97,32 @@ pub fn create_indicator(input: CreateIndicatorInput, db: State<Database>) -> Res
 }
 
 #[tauri::command]
-pub fn update_indicator(input: UpdateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
+pub fn update_indicator(
+    input: UpdateIndicatorInput,
+    db: State<Database>,
+) -> Result<Indicator, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
-    let existing = conn.query_row(
-        "SELECT id, project_id, name, unit, reference_range, sort_order, is_core, created_at
+    let existing = conn
+        .query_row(
+            "SELECT id, project_id, name, unit, reference_range, sort_order, is_core, created_at
          FROM indicators WHERE id = ?1",
-        [&input.id],
-        |row| {
-            Ok(Indicator {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                name: row.get(2)?,
-                unit: row.get(3)?,
-                reference_range: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_core: row.get::<_, i32>(6)? == 1,
-                created_at: row.get(7)?,
-            })
-        },
-    ).map_err(|e| format!("指标不存在: {}", e))?;
+            [&input.id],
+            |row| {
+                Ok(Indicator {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    unit: row.get(3)?,
+                    reference_range: row.get(4)?,
+                    sort_order: row.get(5)?,
+                    is_core: row.get::<_, i32>(6)? == 1,
+                    created_at: row.get(7)?,
+                })
+            },
+        )
+        .map_err(|e| format!("指标不存在: {}", e))?;
 
     let name = input.name.unwrap_or(existing.name);
     let unit = input.unit.unwrap_or(existing.unit);
@@ -165,16 +173,21 @@ pub fn delete_indicator(id: String, db: State<Database>) -> Result<bool, String>
 }
 
 #[tauri::command]
-pub fn ensure_indicator(input: CreateIndicatorInput, db: State<Database>) -> Result<Indicator, String> {
+pub fn ensure_indicator(
+    input: CreateIndicatorInput,
+    db: State<Database>,
+) -> Result<Indicator, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
     // Check if exists
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM indicators WHERE project_id = ?1 AND name = ?2)",
-        [&input.project_id, &input.name],
-        |row| row.get(0),
-    ).unwrap_or(false);
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM indicators WHERE project_id = ?1 AND name = ?2)",
+            [&input.project_id, &input.name],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
 
     if exists {
         return Err("指标已存在".to_string());
@@ -196,9 +209,11 @@ pub fn ensure_indicator(input: CreateIndicatorInput, db: State<Database>) -> Res
 
     // 回填历史数据: 遍历该项目下所有 OCR 结果，查找匹配的指标值并写入 indicator_values
     // 这样趋势图就能立即显示历史数据
-    if let Ok(mut stmt) = conn.prepare("SELECT id, record_id, checkup_date, parsed_items FROM ocr_results WHERE project_id = ?1") {
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT id, record_id, checkup_date, parsed_items FROM ocr_results WHERE project_id = ?1",
+    ) {
         let ocr_rows = stmt.query_map([&input.project_id], |row| {
-             Ok((
+            Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
@@ -209,7 +224,9 @@ pub fn ensure_indicator(input: CreateIndicatorInput, db: State<Database>) -> Res
         if let Ok(rows) = ocr_rows {
             for row in rows {
                 if let Ok((ocr_id, record_id, checkup_date, parsed_items_str)) = row {
-                    if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&parsed_items_str) {
+                    if let Ok(items) =
+                        serde_json::from_str::<Vec<serde_json::Value>>(&parsed_items_str)
+                    {
                         for item in items {
                             // 模糊匹配名称 (去除空白后比较)
                             let item_name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -223,10 +240,13 @@ pub fn ensure_indicator(input: CreateIndicatorInput, db: State<Database>) -> Res
 
                                 // 尝试解析数值
                                 let value: Option<f64> = value_text.parse().ok();
-                                
-                                let is_abnormal = item.get("is_abnormal").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                                let is_abnormal = item
+                                    .get("is_abnormal")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
                                 let iv_id = uuid::Uuid::new_v4().to_string();
-                                
+
                                 let _ = conn.execute(
                                     "INSERT INTO indicator_values (id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
                                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",

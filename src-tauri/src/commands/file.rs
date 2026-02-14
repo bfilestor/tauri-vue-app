@@ -1,7 +1,7 @@
+use super::AppDir;
+use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::db::Database;
-use super::AppDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckupFile {
@@ -51,13 +51,13 @@ pub fn upload_files(
             .map_err(|e| format!("项目不存在: {}", e))?;
 
         // 构建存储路径: pictures/<项目名>/<日期>/<文件名>
-        let store_dir = app_dir.0
+        let store_dir = app_dir
+            .0
             .join("pictures")
             .join(&project_name)
             .join(&file_input.checkup_date);
 
-        std::fs::create_dir_all(&store_dir)
-            .map_err(|e| format!("创建目录失败: {}", e))?;
+        std::fs::create_dir_all(&store_dir).map_err(|e| format!("创建目录失败: {}", e))?;
 
         // 解码 base64 文件数据
         let file_bytes = base64::Engine::decode(
@@ -72,8 +72,7 @@ pub fn upload_files(
         let stored_filename = format!("{}_{}", &id[..8], &file_input.filename);
         let stored_path = store_dir.join(&stored_filename);
 
-        std::fs::write(&stored_path, &file_bytes)
-            .map_err(|e| format!("文件保存失败: {}", e))?;
+        std::fs::write(&stored_path, &file_bytes).map_err(|e| format!("文件保存失败: {}", e))?;
 
         // 获取相对路径
         let relative_path = stored_path
@@ -155,7 +154,11 @@ pub fn list_files(record_id: String, db: State<Database>) -> Result<Vec<CheckupF
 
 /// 读取文件内容（Base64），用于前端预览
 #[tauri::command]
-pub fn read_file_base64(file_id: String, db: State<Database>, app_dir: State<AppDir>) -> Result<String, String> {
+pub fn read_file_base64(
+    file_id: String,
+    db: State<Database>,
+    app_dir: State<AppDir>,
+) -> Result<String, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
@@ -168,8 +171,7 @@ pub fn read_file_base64(file_id: String, db: State<Database>, app_dir: State<App
         .map_err(|e| format!("文件不存在: {}", e))?;
 
     let full_path = app_dir.0.join(&stored_path);
-    let bytes = std::fs::read(&full_path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let bytes = std::fs::read(&full_path).map_err(|e| format!("读取文件失败: {}", e))?;
 
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
     Ok(format!("data:{};base64,{}", mime_type, b64))
@@ -177,7 +179,11 @@ pub fn read_file_base64(file_id: String, db: State<Database>, app_dir: State<App
 
 /// 删除文件
 #[tauri::command]
-pub fn delete_file(file_id: String, db: State<Database>, app_dir: State<AppDir>) -> Result<bool, String> {
+pub fn delete_file(
+    file_id: String,
+    db: State<Database>,
+    app_dir: State<AppDir>,
+) -> Result<bool, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
@@ -191,7 +197,8 @@ pub fn delete_file(file_id: String, db: State<Database>, app_dir: State<AppDir>)
 
     // 删除关联的 OCR 结果和指标值
     conn.execute("DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1)", [&file_id]).ok();
-    conn.execute("DELETE FROM ocr_results WHERE file_id = ?1", [&file_id]).ok();
+    conn.execute("DELETE FROM ocr_results WHERE file_id = ?1", [&file_id])
+        .ok();
 
     // 删除数据库记录
     conn.execute("DELETE FROM checkup_files WHERE id = ?1", [&file_id])

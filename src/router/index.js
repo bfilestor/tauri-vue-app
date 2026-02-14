@@ -18,6 +18,16 @@ const routes = [
         component: () => import('@/views/upload/index.vue'),
       },
       {
+        path: '/desensitize',
+        name: 'Desensitize',
+        meta: {
+          keepAlive: true,
+          title: '数据脱敏',
+          icon: 'healing',
+        },
+        component: () => import('@/views/desensitize/index.vue'),
+      },
+      {
         path: '/trends',
         name: 'Trends',
         meta: {

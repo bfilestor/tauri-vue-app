@@ -27,7 +27,10 @@ pub struct ProjectTrend {
 
 /// 获取某个项目的趋势数据
 #[tauri::command]
-pub fn get_project_trends(project_id: String, db: tauri::State<Database>) -> Result<ProjectTrend, String> {
+pub fn get_project_trends(
+    project_id: String,
+    db: tauri::State<Database>,
+) -> Result<ProjectTrend, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
@@ -45,7 +48,7 @@ pub fn get_project_trends(project_id: String, db: tauri::State<Database>) -> Res
         .prepare(
             "SELECT id, name, unit, reference_range FROM indicators
              WHERE project_id = ?1
-             ORDER BY is_core DESC, sort_order ASC, name ASC"
+             ORDER BY is_core DESC, sort_order ASC, name ASC",
         )
         .map_err(|e| format!("查询指标失败: {}", e))?;
 
@@ -71,7 +74,7 @@ pub fn get_project_trends(project_id: String, db: tauri::State<Database>) -> Res
                 "SELECT checkup_date, value, value_text, is_abnormal
                  FROM indicator_values
                  WHERE indicator_id = ?1 AND project_id = ?2
-                 ORDER BY checkup_date ASC"
+                 ORDER BY checkup_date ASC",
             )
             .map_err(|e| format!("查询指标值失败: {}", e))?;
 
@@ -112,15 +115,14 @@ pub fn get_all_trends(db: tauri::State<Database>) -> Result<Vec<ProjectTrend>, S
 
     // 获取所有活跃项目
     let mut proj_stmt = conn
-        .prepare("SELECT id, name FROM checkup_projects WHERE is_active = 1 ORDER BY sort_order ASC")
+        .prepare(
+            "SELECT id, name FROM checkup_projects WHERE is_active = 1 ORDER BY sort_order ASC",
+        )
         .map_err(|e| format!("查询项目失败: {}", e))?;
 
     let projects: Vec<(String, String)> = proj_stmt
         .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| format!("查询项目失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()

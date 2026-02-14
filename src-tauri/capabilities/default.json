@@ -15,6 +15,47 @@
     "core:window:allow-unminimize",
     "core:window:allow-show",
     "core:window:allow-set-focus",
-    "core:app:allow-default-window-icon"
+    "core:app:allow-default-window-icon",
+    "fs:default",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$PICTURES/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOADS/**"
+        },
+        {
+          "path": "$DOCUMENTS/**"
+        },
+        {
+          "path": "$HOME/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$PICTURES/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOADS/**"
+        },
+        {
+          "path": "$DOCUMENTS/**"
+        },
+        {
+          "path": "$HOME/**"
+        }
+      ]
+    }
   ]
 }

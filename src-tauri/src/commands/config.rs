@@ -1,6 +1,6 @@
+use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::db::Database;
 
 #[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]

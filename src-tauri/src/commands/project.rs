@@ -1,7 +1,7 @@
+use super::AppDir;
+use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use crate::db::Database;
-use super::AppDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
@@ -70,8 +70,7 @@ pub fn create_project(
 
     // 创建对应的 pictures 子目录
     let project_dir = app_dir.0.join("pictures").join(&input.name);
-    std::fs::create_dir_all(&project_dir)
-        .map_err(|e| format!("创建项目文件夹失败: {}", e))?;
+    std::fs::create_dir_all(&project_dir).map_err(|e| format!("创建项目文件夹失败: {}", e))?;
 
     conn.execute(
         "INSERT INTO checkup_projects (id, name, description, sort_order, is_active, created_at, updated_at)
@@ -151,7 +150,10 @@ pub fn delete_project(id: String, db: State<Database>) -> Result<bool, String> {
         .map_err(|e| format!("查询关联文件失败: {}", e))?;
 
     if file_count > 0 {
-        return Err(format!("该项目下有 {} 个关联文件，无法删除。请先删除相关检查记录。", file_count));
+        return Err(format!(
+            "该项目下有 {} 个关联文件，无法删除。请先删除相关检查记录。",
+            file_count
+        ));
     }
 
     // 先删除关联的指标

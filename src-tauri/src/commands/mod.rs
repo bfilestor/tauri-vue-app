@@ -1,12 +1,12 @@
-pub mod config;
-pub mod project;
-pub mod indicator;
-pub mod record;
-pub mod file;
-pub mod ocr;
 pub mod ai;
-pub mod trend;
+pub mod config;
+pub mod file;
+pub mod indicator;
+pub mod ocr;
+pub mod project;
+pub mod record;
 pub mod system;
+pub mod trend;
 
 use std::path::PathBuf;
 
