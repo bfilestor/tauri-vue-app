@@ -1,5 +1,5 @@
 {
-  "name": "tauri-vue-app",
+  "name": "health-monitor",
   "private": true,
   "version": "1.0.2",
   "type": "module",

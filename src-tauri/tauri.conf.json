@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tauri Vue App",
+  "productName": "HealthMonitor",
   "version": "1.0.2",
   "identifier": "com.apks.site",
   "build": {
@@ -18,7 +18,7 @@
         "width": 1000,
         "center": true,
         "resizable": true,
-        "title": "Health Monitor",
+        "title": "健康管理专家",
         "decorations": false
       }
     ],
@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "category": "DeveloperTool",
+    "category": "Healthcare and Fitness",
     "copyright": "",
     "externalBin": [],
     "icon": [
