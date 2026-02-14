@@ -309,6 +309,36 @@
 
 ---
 
+## Epic 8：手机扫码上传（Mobile Scan Upload）
+
+### Feature 8.1：局域网服务基础设施
+- [x] **ISS-046** [后端] 实现 Axum HTTP 服务与 IP 获取
+  - 引入 `axum`, `local-ip-address`, `qrcodegen` 依赖
+  - 实现 `start_server`：获取本机非回环 IP，绑定随机端口
+  - 实现 `stop_server`：优雅关闭服务
+  - 依赖：ISS-005
+- [x] **ISS-047** [后端] 实现文件接收与二维码生成
+  - 端点 `GET /`: 返回内嵌 HTML 的移动端上传页面
+  - 端点 `POST /upload`: 处理 Multipart 上传，保存到 `temp/mobile_uploads` 目录
+  - 生成 URL 的二维码 Base64 图片
+  - 触发 `mobile_upload_success` 事件通知前端
+  - 依赖：ISS-046
+
+### Feature 8.2：前端集成
+- [x] **ISS-048** [前端] 手机上传二维码弹窗
+  - 在文件上传页添加"手机上传"入口
+  - 调用 `start_mobile_server` 获取二维码并展示
+  - 关闭弹窗时调用 `stop_mobile_server`
+  - 依赖：ISS-047
+- [x] **ISS-049** [前端] 实时接收文件处理
+  - 监听 `mobile_upload_success` 事件
+  - 将接收到的文件路径自动添加到当前上传列表的文件队列中
+  - 依赖：ISS-048
+
+
+---
+
+
 ## 依赖关系图
 
 ```mermaid
@@ -350,6 +380,11 @@ graph TD
     ISS041 --> ISS043[ISS-043 马赛克]
     ISS041 --> ISS044[ISS-044 脱敏页面]
     ISS044 --> ISS045[ISS-045 文件IO]
+    ISS005 --> ISS046[ISS-046 Axum服务]
+    ISS046 --> ISS047[ISS-047 上传处理]
+    ISS047 --> ISS048[ISS-048 二维码UI]
+    ISS048 --> ISS049[ISS-049 接收事件]
+
 ```
 
 ---

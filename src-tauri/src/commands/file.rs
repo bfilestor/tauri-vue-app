@@ -224,3 +224,15 @@ fn guess_mime_type(filename: &str) -> String {
         _ => "application/octet-stream".to_string(),
     }
 }
+
+/// 读取临时文件（用于手机上传预览）
+#[tauri::command]
+pub fn read_temp_file(
+    path: String,
+) -> Result<String, String> {
+    // 读取文件并转为 Base64
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+    let mime = guess_mime_type(&path);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}

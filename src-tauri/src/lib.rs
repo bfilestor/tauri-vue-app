@@ -54,6 +54,8 @@ pub fn run() {
             commands::file::list_files,
             commands::file::read_file_base64,
             commands::file::delete_file,
+            commands::file::read_temp_file,
+
             commands::ocr::start_ocr,
             commands::ocr::retry_ocr,
             commands::ocr::get_ocr_status,
@@ -72,6 +74,9 @@ pub fn run() {
             commands::ai::chat_with_ai,
             commands::ai::get_chat_history,
             commands::ai::clear_chat_history,
+            commands::mobile::start_mobile_server,
+            commands::mobile::stop_mobile_server,
+
         ])
         .setup(|app| {
             // 初始化日志（仅调试模式）
@@ -92,6 +97,8 @@ pub fn run() {
             // 将数据库实例和 app_dir 注入到 Tauri 状态
             app.manage(database);
             app.manage(commands::AppDir(app_dir));
+            app.manage(services::mobile_server::init_state());
+
 
             log::info!("健康管家系统初始化完成");
             Ok(())

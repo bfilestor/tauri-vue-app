@@ -7,6 +7,8 @@ pub mod project;
 pub mod record;
 pub mod system;
 pub mod trend;
+pub mod mobile;
+
 
 use std::path::PathBuf;
 

@@ -1,0 +1,40 @@
+    Checking tauri-vue-app v1.0.2 (E:\source\node\tauri-vue-app\src-tauri)
+warning: unused import: `IpAddr`
+ --> src\services\mobile_server.rs:9:16
+  |
+9 | use std::net::{IpAddr, SocketAddr};
+  |                ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Arc`
+  --> src\services\mobile_server.rs:10:17
+   |
+10 | use std::sync::{Arc, Mutex};
+   |                 ^^^
+
+error[E0382]: borrow of moved value: `url`
+   --> src\services\mobile_server.rs:225:34
+    |
+192 |     let url = format!("http://{}:{}/", ip, port);
+    |         --- move occurs because `url` has type `std::string::String`, which does not implement the `Copy` trait
+...
+211 |     tauri::async_runtime::spawn(async move {
+    |                                 ---------- value moved here
+212 |         log::info!("Starting mobile server at {}", url);
+    |                                                    --- variable moved due to use in coroutine
+...
+225 |     let qr = QrCode::encode_text(&url, QrCodeEcc::Medium).map_err(|e| e.to_string())?;
+    |                                  ^^^^ value borrowed here after move
+    |
+    = note: borrow occurs due to deref coercion to `str`
+help: consider cloning the value before moving it into the closure
+    |
+211 ~     let value = url.clone();
+212 ~     tauri::async_runtime::spawn(async move {
+213 ~         log::info!("Starting mobile server at {}", value);
+    |
+
+For more information about this error, try `rustc --explain E0382`.
+warning: `tauri-vue-app` (lib) generated 2 warnings
+error: could not compile `tauri-vue-app` (lib) due to 1 previous error; 2 warnings emitted

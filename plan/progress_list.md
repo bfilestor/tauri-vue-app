@@ -109,6 +109,18 @@
 
 ---
 
+## Epic 8：手机扫码上传
+| Issue | 描述 | 状态 | 依赖 | 测试 | 备注 |
+|-------|------|------|------|------|------|
+| ISS-046 | [后端] Axum HTTP 服务与 IP 获取 | Done | ISS-005 | - | Implemented with Axum 0.8 & local-ip-address |
+| ISS-047 | [后端] 文件接收与二维码生成 | Done | ISS-046 | - | Mobile upload logic & Event emitting |
+| ISS-048 | [前端] 手机上传二维码弹窗 | Done | ISS-047 | - | Vue component implemented |
+| ISS-049 | [前端] 实时接收文件处理 | Done | ISS-048 | - | Event listener & read_temp_file command |
+
+
+---
+
+
 ## 汇总统计
 
 | 状态 | 数量 |
@@ -117,5 +129,6 @@
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
-| Done | 43 |
-| **合计** | **43** |
+| Done | 47 |
+| **合计** | **47** |
+

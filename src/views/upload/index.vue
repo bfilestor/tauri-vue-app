@@ -75,7 +75,14 @@
               <el-select v-model="selectedProjectId" placeholder="选择检查项目" class="w-48" size="default">
                 <el-option v-for="p in activeProjects" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
+              
+              <el-button type="success" plain @click="showMobileDialog = true">
+                <span class="material-symbols-outlined text-sm mr-1">qr_code_scanner</span>
+                手机上传
+              </el-button>
+
               <el-upload
+
                 ref="uploadRef"
                 :auto-upload="false"
                 :on-change="handleFileChange"
@@ -392,12 +399,18 @@
         </div>
       </div>
     </el-dialog>
+
+    
+    <MobileUploadDialog v-model="showMobileDialog" />
   </div>
 </template>
 
+
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import MobileUploadDialog from './MobileUploadDialog.vue'
 import { invoke } from '@tauri-apps/api/core'
+
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 
@@ -798,6 +811,45 @@ const setAsIndicator = async (row, ocr) => {
 
 // ===== 编辑 OCR 指标 =====
 const showEditDialog = ref(false)
+
+// ===== 手机上传 =====
+const showMobileDialog = ref(false)
+
+onMounted(async () => {
+    // 加载初始数据
+    await loadProjects()
+    await loadRecords(true)
+
+    // 监听手机上传事件
+    await listen('mobile_upload_success', async (event) => {
+        const { filepath, filename } = event.payload
+        console.log('Mobile upload success:', filename)
+        try {
+            // 读取文件预览
+            const base64Data = await invoke('read_temp_file', { path: filepath })
+            // 添加到待上传列表
+            pendingFiles.value.push({
+                name: filename,
+                raw: null, 
+                preview: base64Data,
+                base64: base64Data.split(',')[1],
+            })
+             ElNotification({
+                title: '接收到新文件',
+                message: `已接收来自手机的文件: ${filename}`,
+                type: 'success',
+            })
+        } catch (e) {
+            console.error('Failed to read mobile upload:', e)
+            ElNotification({
+                title: '接收文件失败',
+                message: ''+e,
+                type: 'error',
+            })
+        }
+    })
+})
+
 const savingOcrItem = ref(false)
 const editingOcrId = ref('')
 const editingIndex = ref(-1)
