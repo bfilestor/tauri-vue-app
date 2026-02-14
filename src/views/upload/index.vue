@@ -2,8 +2,8 @@
   <div class="upload-page">
     <header class="flex justify-between items-center mb-6">
       <div>
-        <h1 class="text-3xl font-bold text-slate-900">检查数据上传与存档</h1>
-        <p class="text-slate-500 mt-1">上传体检报告图片，通过 OCR 智能识别 + AI 深度分析，管理您的每次检查数据。</p>
+        <h1 class="text-3xl font-bold text-slate-900">报告上传</h1>
+        <p class="text-slate-500 mt-1">上传体检报告图片，通过 AI 智能识别 + 深度分析，管理您的每次检查数据。</p>
       </div>
       <el-button type="primary" @click="showCreateDialog = true">
         <span class="material-symbols-outlined text-sm mr-1">add_circle</span>
@@ -157,7 +157,7 @@
               :loading="ocrLoading"
               @click="startOcr(record)">
               <span class="material-symbols-outlined text-sm mr-1">document_scanner</span>
-              发起 OCR 识别
+              AI智能识别
             </el-button>
             <el-button
               type="success"
@@ -165,7 +165,7 @@
               :loading="aiLoading"
               @click="startAiAnalysis(record)">
               <span class="material-symbols-outlined text-sm mr-1">psychology</span>
-              发起 AI 分析
+              AI智能分析
             </el-button>
 
             <div class="flex-1"></div>
@@ -173,7 +173,7 @@
             <!-- OCR 结果 / AI 分析结果查看 -->
             <el-button v-if="record.status === 'ocr_done' || record.status === 'ai_done'"
               link type="primary" @click="viewOcrResults(record)">
-              查看 OCR 结果
+              查看识别结果
             </el-button>
             <el-button v-if="record.status === 'ai_done'"
               link type="primary" @click="viewAiResult(record)">
@@ -186,7 +186,7 @@
             <div class="flex items-center justify-between mb-2">
               <span class="text-sm font-medium text-amber-700">
                 <span class="material-symbols-outlined text-sm align-middle mr-1">hourglass_top</span>
-                OCR 识别中...
+                智能识别中...
               </span>
               <span class="text-xs text-amber-600">{{ ocrProgress.completed }} / {{ ocrProgress.total }}</span>
             </div>
@@ -262,9 +262,9 @@
     </el-dialog>
 
     <!-- OCR 结果弹窗 -->
-    <el-dialog v-model="showOcrDialog" title="OCR 识别结果" width="70%" top="5vh" append-to-body>
+    <el-dialog v-model="showOcrDialog" title="AI识别结果" width="70%" top="5vh" append-to-body>
       <div v-if="ocrResults.length === 0" class="text-center py-10 text-slate-400">
-        暂无 OCR 结果
+        暂无识别结果
       </div>
       <div v-else class="space-y-4">
         <div v-for="ocr in ocrResults" :key="ocr.id" class="border border-slate-200 rounded-lg p-4">
