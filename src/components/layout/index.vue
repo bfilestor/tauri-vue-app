@@ -41,7 +41,7 @@
         </div>
         <button
           @click="handleQuit"
-          class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+          class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-500 bg-red-50 hover:bg-red-200 hover:text-red-600 rounded-lg transition-colors"
         >
           <span class="material-symbols-outlined text-xl">logout</span>
           退出程序
