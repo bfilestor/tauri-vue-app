@@ -118,7 +118,17 @@
 | ISS-049 | [前端] 实时接收文件处理 | Done | ISS-048 | - | Event listener & read_temp_file command |
 
 
+
 ---
+
+## Epic 9：脱敏工作台手机上传
+| Issue | 描述 | 状态 | 依赖 | 测试 | 备注 |
+|-------|------|------|------|------|------|
+| ISS-050 | [前端] 提取手机上传弹窗组件 | Done | ISS-048 | - | Shared component |
+| ISS-051 | [前端] 脱敏工作台集成手机上传 | Done | ISS-050 | - | With replacement content |
+
+---
+
 
 
 ## 汇总统计
@@ -129,6 +139,7 @@
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
-| Done | 47 |
-| **合计** | **47** |
+| Done | 49 |
+| **合计** | **49** |
+
 

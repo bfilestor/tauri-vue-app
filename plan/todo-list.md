@@ -333,7 +333,24 @@
 - [x] **ISS-049** [前端] 实时接收文件处理
   - 监听 `mobile_upload_success` 事件
   - 将接收到的文件路径自动添加到当前上传列表的文件队列中
+
+---
+
+## Epic 9：脱敏工作台手机上传（Mobile Upload for Desensitization）
+
+### Feature 9.1：前端集成
+- [x] **ISS-050** [前端] 提取手机上传弹窗组件
+  - 将 `src/views/upload/MobileUploadDialog.vue` 移动公共组件目录
+  - 更新 `upload/index.vue` 引用
   - 依赖：ISS-048
+- [x] **ISS-051** [前端] 脱敏工作台集成手机上传
+  - 在 `desensitize/index.vue` 添加手机上传按钮
+  - 监听 `mobile_upload_success` 事件
+  - 若正在脱敏页面，自动加载接收到的第一张图片
+  - 处理“替换当前图片”的确认逻辑
+  - 依赖：ISS-050
+
+
 
 
 ---

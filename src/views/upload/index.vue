@@ -408,8 +408,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import MobileUploadDialog from './MobileUploadDialog.vue'
+import MobileUploadDialog from '@/components/MobileUploadDialog.vue'
+import { useRoute } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
+
+
 
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
@@ -814,6 +817,8 @@ const showEditDialog = ref(false)
 
 // ===== 手机上传 =====
 const showMobileDialog = ref(false)
+const route = useRoute()
+
 
 onMounted(async () => {
     // 加载初始数据
@@ -822,7 +827,10 @@ onMounted(async () => {
 
     // 监听手机上传事件
     await listen('mobile_upload_success', async (event) => {
+        if (route.path !== '/upload') return
+
         const { filepath, filename } = event.payload
+
         console.log('Mobile upload success:', filename)
         try {
             // 读取文件预览
