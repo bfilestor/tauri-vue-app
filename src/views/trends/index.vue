@@ -7,7 +7,7 @@
 
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div class="flex items-center gap-4">
-        <el-select v-model="selectedProjectId" placeholder="选择检查项目" clearable @change="loadTrends" class="w-56">
+        <el-select v-model="selectedProjectId" placeholder="选择检查项目" clearable @change="loadTrends" class="w-56 flex-shrink-0">
           <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
         </el-select>
         <el-button type="primary" @click="loadAllTrends" :loading="loading">
