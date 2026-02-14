@@ -496,7 +496,7 @@ const updateImageInfo = () => {
     return
   }
   const zoom = Math.round(scale.value * 100)
-  emit('update:imageInfo', `${originalWidth} x ${originalHeight} px | ${zoom}%`)
+  emit('update:imageInfo', `${Math.round(originalWidth)} x ${Math.round(originalHeight)} px | ${zoom}%`)
 }
 
 const exportImage = async () => {
