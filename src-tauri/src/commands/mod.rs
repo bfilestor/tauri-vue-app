@@ -4,6 +4,7 @@ pub mod file;
 pub mod indicator;
 pub mod ocr;
 pub mod project;
+pub mod provider;
 pub mod record;
 pub mod system;
 pub mod trend;

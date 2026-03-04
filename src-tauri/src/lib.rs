@@ -77,6 +77,16 @@ pub fn run() {
             commands::mobile::get_local_ips,
             commands::mobile::start_mobile_server,
             commands::mobile::stop_mobile_server,
+            commands::provider::list_providers,
+            commands::provider::create_provider,
+            commands::provider::update_provider,
+            commands::provider::delete_provider,
+            commands::provider::list_provider_models,
+            commands::provider::add_model,
+            commands::provider::update_model_info,
+            commands::provider::delete_model,
+            commands::provider::set_default_model,
+            commands::provider::test_provider_connection,
 
         ])
         .setup(|app| {
@@ -99,6 +109,18 @@ pub fn run() {
             app.manage(database);
             app.manage(commands::AppDir(app_dir));
             app.manage(services::mobile_server::init_state());
+
+            // 旧数据迁移（ISS-054）
+            {
+                let database_state: tauri::State<db::Database> = app.state();
+                let conn_guard = database_state.conn.lock().map_err(|e| e.to_string())?;
+                if let Some(ref conn) = *conn_guard {
+                    if let Err(e) = commands::provider::migrate_legacy_config(conn) {
+                        log::warn!("旧版配置迁移失败: {}", e);
+                    }
+                }
+            }
+
 
 
             log::info!("健康管家系统初始化完成");

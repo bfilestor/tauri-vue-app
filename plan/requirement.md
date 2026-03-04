@@ -284,21 +284,122 @@
 
 ### 3.2 模块二：系统设置
 
-#### 3.2.1 AI 接口设置
+#### 3.2.1 AI 接口设置（多提供商 · Cherry Studio 风格）
+
+> **v2.0 重构** — 参考 [Cherry Studio](https://github.com/CherryHQ/cherry-studio) 的提供商管理架构
+
+##### 整体布局（三栏式）
+
+设置页面由原来的「AI 设置 + Prompt 模板」合并在一个 Tab 内，改为分离为**两个独立 Tab**：
+
+| Tab 标签 | 内容 |
+|----------|------|
+| **模型服务** | 多提供商管理：左侧提供商列表 + 中间详情配置 + 右侧模型列表 |
+| **Prompt 设置** | OCR Prompt 模板 + AI 分析 Prompt 模板 |
+
+「模型服务」Tab 采用**三栏布局**（参考 Cherry Studio 截图）：
+
+```
+┌───────────────┬──────────────────────────────────────┐
+│  提供商列表     │  提供商详情配置                         │
+│ ┌───────────┐ │  ┌──────────────────────────────────┐│
+│ │ GPT-Load ☑│ │  │ 名称: GPT-Load    ⚙ 编辑  🗑 删除 ││
+│ │ Gemini   ☑│ │  │ 启用: [ON/OFF]                    ││
+│ │ Ollama   ☐│ │  │                                   ││
+│ │ ...       │ │  │ API 密钥: ●●●●●●●  [检测]          ││
+│ └───────────┘ │  │ API 地址: http://...               ││
+│               │  │                                   ││
+│  [搜索框]      │  │ ─────────────────────────────────  ││
+│  [+ 添加]     │  │ 模型列表 (4个)        [+ 添加模型]   ││
+│               │  │  ▼ gpt-4.1                         ││
+│               │  │    · gpt-4.1-nano  [⚙] [−]         ││
+│               │  │    · gpt-4.1-nano-2025  [⚙] [−]    ││
+│               │  │  ▼ gpt-4o                          ││
+│               │  │    · gpt-4o-mini  ★默认  [⚙] [−]   ││
+│               │  └──────────────────────────────────┘│
+└───────────────┴──────────────────────────────────────┘
+```
+
+##### 数据模型
+
+**新增数据库表 `ai_providers`：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT (UUID) | 主键 |
+| name | TEXT | 提供商名称（如「GPT-Load」、「Gemini 官方」） |
+| type | TEXT | 提供商类型：`openai` / `gemini` / `anthropic` / `azure-openai` / `ollama` / `custom` |
+| api_key | TEXT | API 密钥 |
+| api_url | TEXT | API 接口基础地址 |
+| enabled | INTEGER (0/1) | 是否启用 |
+| sort_order | INTEGER | 排序顺序 |
+| created_at | TEXT (ISO8601) | 创建时间 |
+| updated_at | TEXT (ISO8601) | 更新时间 |
+
+**新增数据库表 `ai_models`：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT (UUID) | 主键 |
+| provider_id | TEXT (FK) | 所属提供商 ID |
+| model_id | TEXT | 模型标识（调用 API 时使用，如 `gpt-4o-mini`） |
+| model_name | TEXT | 模型显示名称（可选，如「GPT-4o 旗舰版」） |
+| group_name | TEXT | 分组名称（可选，如 `gpt-4o`、`gpt-4.1`） |
+| is_default | INTEGER (0/1) | 是否为全局默认模型 |
+| enabled | INTEGER (0/1) | 是否启用 |
+| sort_order | INTEGER | 排序顺序 |
+| created_at | TEXT (ISO8601) | 创建时间 |
+
+##### 提供商类型与 API 兼容
+
+| 提供商类型 | API 协议 | 备注 |
+|-----------|---------|------|
+| `openai` | OpenAI Chat Completions | 默认类型，大部分第三方兼容 |
+| `gemini` | Google Gemini API | 需特殊 URL 拼接 |
+| `anthropic` | Anthropic Messages API | 使用 `x-api-key` 头 |
+| `azure-openai` | Azure OpenAI Service | 部署名 + API 版本参数 |
+| `ollama` | Ollama API (OpenAI 兼容) | 通常无需 API Key |
+| `custom` | 自定义 OpenAI 兼容 | 用户自定义的兼容接口 |
+
+##### 提供商管理操作
+
+| 操作 | 说明 |
+|------|------|
+| 添加提供商 | 弹窗：填写名称 + 选择类型 |
+| 编辑提供商 | 弹窗：修改名称 / 类型 |
+| 删除提供商 | 确认后级联删除所有关联模型 |
+| 启用/停用 | 列表中 Switch 切换 |
+| 配置 API | 右侧面板：输入 API Key + API URL |
+| 测试连接 | 使用该提供商配置发送测试请求 |
+
+##### 模型管理操作
+
+| 操作 | 说明 |
+|------|------|
+| 添加模型 | 弹窗：模型 ID（必填）+ 显示名称（可选）+ 分组名称（可选） |
+| 编辑模型 | 弹窗：修改模型 ID / 名称 / 分组 |
+| 删除模型 | 从列表移除 |
+| 设为全局默认 | 标记为系统默认模型，同一时间仅一个 |
+
+##### 全局默认模型
+
+系统各处（OCR / AI 分析 / AI 问答）调用 AI 时，使用**全局默认模型**对应的 Provider 的 `api_url` + `api_key` + `model_id`。
+
+##### 全局网络设置（保持不变）
 
 | 配置项 | 说明 |
 |--------|------|
-| API URL | AI 服务接口地址 |
-| API Key | 认证密钥 |
-| 可用模型列表 | 支持添加多个模型名称，可选择默认模型 |
 | SOCKS 代理开关 | 是否启用代理 |
 | 代理地址 | 如 `socks5://127.0.0.1:1080` |
 | 代理用户名 | 可选 |
 | 代理密码 | 可选 |
+| 请求超时时间 | 默认 120 秒 |
 
-- 所有配置存储在 `system_config` 表
+- `ai_providers` 和 `ai_models` 使用独立数据库表管理
+- 网络代理设置继续存储在 `system_config` 表
 - 提供"测试连接"按钮，验证配置有效性
 - 配置变更实时生效
+- **向前兼容**：初次加载时如果检测到旧 `system_config` 中存在 `ai_api_url`/`ai_api_key`/`ai_models`，自动迁移为默认提供商
 
 #### 3.2.2 检查项目管理
 

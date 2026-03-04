@@ -360,6 +360,143 @@
 
 ---
 
+## Epic 10：多 AI 提供商接入（Multi-Provider AI）
+
+> **优先级 P0** — 参考 Cherry Studio 的提供商管理架构，将系统从单 AI 提供商升级为多提供商 + 多模型
+
+### Feature 10.1：数据库表结构升级
+
+#### Story 10.1.1：新增 ai_providers 与 ai_models 表
+- [ ] **ISS-053** [后端] 在 `db.rs` 新增 `ai_providers` 和 `ai_models` 两张表
+  - `ai_providers` 字段: id, name, type, api_key, api_url, enabled, sort_order, created_at, updated_at
+  - `ai_models` 字段: id, provider_id(FK), model_id, model_name, group_name, is_default, enabled, sort_order, created_at
+  - 验收：`cargo build` 通过，程序启动时表自动创建
+  - 依赖：ISS-006
+
+#### Story 10.1.2：旧数据向前兼容迁移
+- [ ] **ISS-054** [后端] 在 db 初始化后检测 `system_config` 中是否存在 `ai_api_url`/`ai_api_key`/`ai_models`，如果存在且 `ai_providers` 表为空，则自动迁移
+  - 迁移逻辑：创建一条默认 Provider（name="默认接口", type="openai"），将旧 API Key/URL 写入
+  - 将旧 `ai_models` JSON 数组解析后逐条插入 `ai_models` 表
+  - 将旧 `ai_default_model` 对应的模型标记 `is_default=1`
+  - 验收：已有旧配置时程序升级后自动出现"默认接口"提供商及其模型
+  - 依赖：ISS-053
+
+### Feature 10.2：Provider/Model CRUD 后端 Commands
+
+#### Story 10.2.1：Provider CRUD
+- [ ] **ISS-055** [后端] 创建 `commands/provider.rs`，实现以下 Tauri Commands：
+  - `list_providers` → 返回所有提供商列表（含各自的模型数量）
+  - `create_provider` → 创建新提供商（name, type），返回完整对象
+  - `update_provider` → 更新提供商字段（name, type, api_key, api_url, enabled）
+  - `delete_provider` → 删除提供商 + 级联删除该提供商下所有模型
+  - `reorder_providers` → 批量更新 sort_order
+  - 测试用例：创建 → 列表含新记录 → 更新 → 验证变更 → 删除 → 验证级联清除
+  - 依赖：ISS-053
+
+#### Story 10.2.2：Model CRUD
+- [ ] **ISS-056** [后端] 在 `commands/provider.rs` 中新增模型管理 Commands：
+  - `list_provider_models` → 通过 provider_id 查询所有模型
+  - `add_model` → 向提供商添加模型（model_id, model_name, group_name）
+  - `update_model` → 更新模型信息
+  - `delete_model` → 删除模型
+  - `set_default_model` → 设置某模型为全局默认（同时取消其他模型的 is_default）
+  - 测试用例：添加模型 → 查询 → 设为默认 → 验证唯一性 → 删除 → 验证
+  - 依赖：ISS-055
+
+#### Story 10.2.3：Provider 连接测试
+- [ ] **ISS-057** [后端] 重构 `test_ai_connection` Command，新增 `test_provider_connection` Command
+  - 接收 provider_id 参数，从 `ai_providers` 表读取该提供商的 api_url 和 api_key
+  - 根据 provider.type 选择正确的请求方式（OpenAI/Anthropic/Gemini 等）
+  - 使用全局代理和超时设置
+  - 保留旧 `test_ai_connection` 兼容
+  - 依赖：ISS-055, ISS-013
+
+### Feature 10.3：后端 AI 调用适配
+
+#### Story 10.3.1：重构 http_client 获取默认提供商配置
+- [ ] **ISS-058** [后端] 修改 `services/http_client.rs`
+  - 新增 `load_default_provider_config(conn) -> AiClientConfig` 函数
+  - 逻辑：查 `ai_models` 表中 `is_default=1` 的模型 → 获取其 `provider_id` → 查 `ai_providers` 表获取 api_url/api_key → 组装 AiClientConfig
+  - 如果无默认模型，fallback 到第一个 enabled=1 的 Provider 的第一个模型
+  - 修改原有 `load_ai_config` 使其优先使用 `load_default_provider_config`，找不到时再 fallback 到旧 system_config
+  - 验收：后端 OCR / AI 分析 / AI 问答能正确使用新表中的默认提供商
+  - 依赖：ISS-053, ISS-056
+
+#### Story 10.3.2：更新 OCR 和 AI 分析使用新配置
+- [ ] **ISS-059** [后端] 修改 `commands/ocr.rs` 和 `commands/ai.rs`
+  - 将硬编码的 `load_ai_config` 替换为 `load_default_provider_config`
+  - `get_default_model` 改为从 `ai_models` 表读取 `is_default=1` 的模型
+  - 验收：旧有 OCR / AI 分析功能正常运行
+  - 依赖：ISS-058
+
+### Feature 10.4：前端 UI - 模型服务管理页面
+
+#### Story 10.4.1：Tab 拆分与布局重构
+- [ ] **ISS-060** [前端] 将设置页面的「AI 设置」Tab 拆分为「模型服务」和「Prompt 设置」两个 Tab
+  - 将 Prompt 相关的 UI（OCR Prompt + AI 分析 Prompt）迁移到独立 Tab
+  - 模型服务 Tab 预留为空白，后续填入多提供商布局
+  - 验收：两个 Tab 可正常切换，Prompt 设置功能不受影响
+  - 依赖：ISS-014
+
+#### Story 10.4.2：提供商列表侧边栏
+- [ ] **ISS-061** [前端] 在「模型服务」Tab 左侧实现提供商列表
+  - 搜索框（按名称过滤）
+  - 提供商卡片：Logo 首字母头像 + 名称 + 启用/停用 Switch
+  - 点击选中，高亮当前选中的提供商
+  - 底部「+ 添加提供商」按钮
+  - 调用 `list_providers` 加载数据
+  - 验收：展示提供商列表、支持搜索和启用/停用切换
+  - 依赖：ISS-055, ISS-060
+
+#### Story 10.4.3：提供商详情配置面板
+- [ ] **ISS-062** [前端] 在「模型服务」Tab 右侧实现提供商配置
+  - 顶部：提供商名称 + 编辑(⚙) + 删除(🗑) 按钮
+  - API 密钥输入框（password 模式 + 显隐切换）
+  - API 地址输入框
+  - 「测试连接」按钮
+  - 所有字段变更后实时调用 `update_provider` 保存
+  - 选中提供商为空时显示占位提示
+  - 验收：可配置任意提供商的 API Key 和 URL，测试连接正常
+  - 依赖：ISS-061, ISS-057
+
+#### Story 10.4.4：模型列表与管理
+- [ ] **ISS-063** [前端] 在提供商详情面板下方实现模型列表
+  - 按 `group_name` 分组折叠展示（无分组的归入"未分组"）
+  - 每个模型行：图标 + 名称 + model_id + 「全局默认」标签 + 操作按钮（设默认/编辑/删除）
+  - 操作按钮在 hover 时显示
+  - 「+ 添加模型」按钮打开添加弹窗
+  - 调用 `list_provider_models`、`add_model`、`update_model`、`delete_model`、`set_default_model`
+  - 验收：可添加/编辑/删除模型，可设定全局默认模型
+  - 依赖：ISS-062, ISS-056
+
+#### Story 10.4.5：添加/编辑提供商弹窗
+- [ ] **ISS-064** [前端] 实现提供商弹窗 Dialog
+  - 字段：提供商名称（必填）+ 提供商类型下拉选择
+  - 类型选项：OpenAI / Gemini / Anthropic / Azure OpenAI / Ollama / 自定义
+  - 首字母头像预览
+  - 编辑模式复用相同弹窗
+  - 验收：可创建新提供商、可编辑已有提供商名称和类型
+  - 依赖：ISS-061
+
+#### Story 10.4.6：添加/编辑模型弹窗
+- [ ] **ISS-065** [前端] 实现模型弹窗 Dialog
+  - 字段：模型 ID（必填）+ 模型名称（可选）+ 分组名称（可选）
+  - 编辑模式复用同一弹窗
+  - 验收：可添加新模型、可编辑已有模型
+  - 依赖：ISS-063
+
+#### Story 10.4.7：全局网络与高级设置面板
+- [ ] **ISS-066** [前端] 将代理设置和超时设置作为全局网络设置卡片
+  - 可放在模型服务 Tab 右侧面板底部或作为独立折叠区
+  - SOCKS 代理开关 + 代理地址 + 认证信息
+  - 请求超时时间
+  - 继续使用 `system_config` 表存储
+  - 验收：全局网络设置功能与旧版一致
+  - 依赖：ISS-060
+
+
+---
+
 
 ## 依赖关系图
 
@@ -407,6 +544,26 @@ graph TD
     ISS047 --> ISS048[ISS-048 二维码UI]
     ISS048 --> ISS049[ISS-049 接收事件]
 
+    ISS006 --> ISS053[ISS-053 ai_providers/ai_models 表]
+    ISS053 --> ISS054[ISS-054 旧数据迁移]
+    ISS053 --> ISS055[ISS-055 Provider CRUD]
+    ISS055 --> ISS056[ISS-056 Model CRUD]
+    ISS055 --> ISS057[ISS-057 Provider连接测试]
+    ISS013 --> ISS057
+    ISS053 --> ISS058[ISS-058 重构http_client]
+    ISS056 --> ISS058
+    ISS058 --> ISS059[ISS-059 更新OCR/AI调用]
+    ISS014 --> ISS060[ISS-060 Tab拆分]
+    ISS055 --> ISS061[ISS-061 提供商列表UI]
+    ISS060 --> ISS061
+    ISS061 --> ISS062[ISS-062 提供商配置面板]
+    ISS057 --> ISS062
+    ISS062 --> ISS063[ISS-063 模型列表UI]
+    ISS056 --> ISS063
+    ISS061 --> ISS064[ISS-064 添加提供商弹窗]
+    ISS063 --> ISS065[ISS-065 添加模型弹窗]
+    ISS060 --> ISS066[ISS-066 全局网络设置]
+
 ```
 
 ---
@@ -440,6 +597,14 @@ graph TD
 |--------|-------|------|
 | P1 | ISS-041 ~ ISS-043 | 图片编辑器核心 |
 | P1 | ISS-044 ~ ISS-045 | 脱敏工作台 |
+
+### Sprint 5：多提供商 AI 接入
+| 优先级 | Issue | 说明 |
+|--------|-------|------|
+| P0 | ISS-053 ~ ISS-054 | 数据库表新增与旧数据迁移 |
+| P0 | ISS-055 ~ ISS-057 | Provider/Model CRUD + 连接测试 |
+| P0 | ISS-058 ~ ISS-059 | 后端 AI 调用适配 |
+| P0 | ISS-060 ~ ISS-066 | 前端多提供商 UI |
 
 ---
 

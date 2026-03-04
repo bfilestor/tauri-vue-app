@@ -6,105 +6,171 @@
     </header>
 
     <el-tabs v-model="activeTab" class="w-full">
-      <el-tab-pane label="AI 设置" name="ai">
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <!-- AI Config -->
-          <el-card shadow="never" class="!rounded-xl !border-slate-200 h-fit">
-            <template #header>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <span class="material-symbols-outlined text-[#2b8cee]">auto_awesome</span>
-                  <span class="font-bold text-lg">AI 接口设置</span>
-                </div>
-                <el-tag :type="connectionStatus === 'success' ? 'success' : 'info'" size="small" round>
-                  {{ connectionStatus === 'success' ? '已连接' : '未测试' }}
-                </el-tag>
-              </div>
-            </template>
-            <el-form :model="aiConfig" label-position="top" class="space-y-1">
-              <el-form-item label="API 接口地址 (URL)">
-                <el-input v-model="aiConfig.apiUrl" placeholder="https://api.openai.com/v1/chat/completions" />
-              </el-form-item>
-              <el-form-item label="API Key">
-                <el-input v-model="aiConfig.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="sk-...">
-                  <template #suffix>
-                    <el-button link @click="showApiKey = !showApiKey">
-                      <span class="material-symbols-outlined text-sm">{{ showApiKey ? 'visibility_off' : 'visibility' }}</span>
-                    </el-button>
-                  </template>
-                </el-input>
-              </el-form-item>
-              <el-form-item label="可用模型列表">
-                <div class="w-full">
-                  <div class="flex gap-2 mb-2 flex-wrap">
-                    <el-tag v-for="(model, index) in aiConfig.models" :key="index" closable @close="removeModel(index)" type="primary" class="!rounded-lg">
-                      {{ model }}
-                    </el-tag>
-                  </div>
-                  <div class="flex gap-2">
-                    <el-input v-model="newModel" placeholder="输入模型名称" size="small" @keyup.enter="addModel" />
-                    <el-button size="small" type="primary" @click="addModel">添加</el-button>
-                  </div>
-                </div>
-              </el-form-item>
-              <el-form-item label="默认模型">
-                <el-select v-model="aiConfig.defaultModel" placeholder="选择默认模型" class="w-full">
-                  <el-option v-for="model in aiConfig.models" :key="model" :label="model" :value="model" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="请求超时时间 (秒)">
-                <el-input-number v-model="aiConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" />
-              </el-form-item>
-              <el-divider />
-              <div class="flex items-center justify-between mb-4">
-                <div>
-                  <h4 class="text-sm font-bold">SOCKS 代理设置</h4>
-                  <p class="text-xs text-slate-500">如需访问特定网络，请开启此项</p>
-                </div>
-                <el-switch v-model="aiConfig.proxyEnabled" />
-              </div>
-              <template v-if="aiConfig.proxyEnabled">
-                <el-form-item label="代理地址">
-                  <el-input v-model="aiConfig.proxyUrl" placeholder="127.0.0.1:7890" />
-                </el-form-item>
-                <div class="grid grid-cols-2 gap-4">
-                  <el-form-item label="代理账号">
-                    <el-input v-model="aiConfig.proxyUsername" placeholder="可选" />
-                  </el-form-item>
-                  <el-form-item label="代理密码">
-                    <el-input v-model="aiConfig.proxyPassword" type="password" placeholder="可选" />
-                  </el-form-item>
-                </div>
-              </template>
-            </el-form>
-            <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
-              <el-button @click="testConnection" :loading="testing">测试连接</el-button>
-              <el-button type="primary" @click="saveAiConfig" :loading="savingAi">保存 AI 配置</el-button>
+      <!-- ========== 模型服务 Tab (ISS-060~066) ========== -->
+      <el-tab-pane label="模型服务" name="ai">
+        <div class="flex h-[620px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+          <!-- 左侧: 提供商列表 -->
+          <div class="w-60 border-r border-slate-100 bg-slate-50/80 flex flex-col shrink-0">
+            <div class="p-3 border-b border-slate-100 bg-white">
+              <el-input v-model="searchProvider" placeholder="搜索提供商..." clearable size="small">
+                <template #prefix><span class="material-symbols-outlined text-sm text-slate-400">search</span></template>
+              </el-input>
             </div>
-          </el-card>
+            <div class="flex-1 overflow-y-auto p-2 space-y-1">
+              <div v-for="p in filteredProviders" :key="p.id"
+                   class="flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150"
+                   :class="activeProviderId === p.id
+                     ? 'bg-white shadow-sm border border-blue-200 ring-1 ring-blue-100'
+                     : 'hover:bg-white/70 border border-transparent'"
+                   @click="selectProvider(p.id)">
+                <div class="flex items-center gap-2.5 overflow-hidden min-w-0">
+                  <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-inner"
+                       :style="{ background: getProviderColor(p.type) }">
+                    {{ p.name.charAt(0).toUpperCase() }}
+                  </div>
+                  <span class="text-sm font-medium text-slate-700 truncate">{{ p.name }}</span>
+                </div>
+                <el-switch v-model="p.enabled" size="small" @click.stop @change="toggleProviderEnabled(p)" class="shrink-0 ml-1" />
+              </div>
+              <div v-if="filteredProviders.length === 0" class="text-center text-slate-400 mt-10 text-xs">暂无匹配</div>
+            </div>
+            <div class="p-3 border-t border-slate-100 bg-white">
+              <el-button class="w-full" plain size="small" @click="openAddProviderDialog">
+                <span class="material-symbols-outlined text-sm mr-1">add</span>添加提供商
+              </el-button>
+            </div>
+          </div>
 
-          <!-- Prompt 模板设置 -->
-          <el-card shadow="never" class="!rounded-xl !border-slate-200 h-fit">
-            <template #header>
-              <div class="flex items-center gap-3">
-                <span class="material-symbols-outlined text-[#2b8cee]">edit_note</span>
-                <span class="font-bold text-lg">Prompt 模板设置</span>
+          <!-- 右侧: 提供商配置 + 模型列表 -->
+          <div v-if="activeProvider" class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur z-10">
+              <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" :style="{ background: getProviderColor(activeProvider.type) }">
+                  {{ activeProvider.name.charAt(0).toUpperCase() }}
+                </div>
+                {{ activeProvider.name }}
+                <el-tag size="small" type="info" effect="plain" class="!ml-2">{{ activeProvider.type }}</el-tag>
+              </h2>
+              <div class="flex items-center gap-2">
+                <el-button link size="small" @click="editProvider(activeProvider)">
+                  <span class="material-symbols-outlined text-slate-400 text-[18px] hover:text-blue-500 transition-colors">settings</span>
+                </el-button>
+                <el-button link type="danger" size="small" @click="delProvider(activeProvider.id)">
+                  <span class="material-symbols-outlined text-[18px]">delete</span>
+                </el-button>
               </div>
-            </template>
-            <el-form label-position="top">
-              <el-form-item label="OCR 识别 Prompt 模板">
-                <el-input v-model="ocrPrompt" type="textarea" :rows="4" placeholder="请识别图片中的医疗检查报告，提取所有检查指标..." />
-              </el-form-item>
-              <el-form-item label="AI 分析 Prompt 模板">
-                <el-input v-model="aiPrompt" type="textarea" :rows="4" placeholder="请根据以下检查数据..." />
-              </el-form-item>
-            </el-form>
-            <div class="flex justify-end mt-2">
-              <el-button type="primary" @click="savePrompts" :loading="savingPrompt">保存 Prompt 模板</el-button>
             </div>
-          </el-card>
+            <div class="p-6 space-y-6 flex-1">
+              <div class="bg-slate-50/60 p-5 rounded-xl border border-slate-100 space-y-4">
+                <div>
+                  <div class="flex justify-between items-center mb-1.5">
+                    <label class="text-sm font-bold text-slate-700">API 密钥</label>
+                    <el-button type="primary" plain size="small" class="!px-3 !h-7" @click="testProviderConnection(activeProvider)" :loading="testingProviderId === activeProvider.id">
+                      <span class="material-symbols-outlined text-xs mr-1">wifi_tethering</span>检测
+                    </el-button>
+                  </div>
+                  <el-input v-model="activeProvider.api_key" type="password" show-password placeholder="sk-..." @change="saveProviderField(activeProvider)" />
+                </div>
+                <div>
+                  <label class="text-sm font-bold text-slate-700 mb-1.5 block">API 地址</label>
+                  <el-input v-model="activeProvider.api_url" placeholder="https://api.openai.com/v1/chat/completions" @change="saveProviderField(activeProvider)" />
+                </div>
+              </div>
+              <div>
+                <div class="flex justify-between items-center mb-3">
+                  <h3 class="font-bold text-slate-800 flex items-center gap-2">模型 <el-tag size="small" type="primary" round effect="plain">{{ providerModels.length }}</el-tag></h3>
+                  <el-button size="small" type="primary" plain @click="openAddModelDialog"><span class="material-symbols-outlined text-sm mr-1">add</span>添加</el-button>
+                </div>
+                <div v-if="providerModels.length === 0" class="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <span class="material-symbols-outlined text-3xl text-slate-300 mb-2">widgets</span>
+                  <p class="text-sm text-slate-400">尚未添加模型</p>
+                </div>
+                <div v-else class="space-y-3">
+                  <div v-for="(models, groupName) in groupedModels" :key="groupName" class="border border-slate-200 rounded-xl overflow-hidden">
+                    <div class="bg-slate-100/80 px-4 py-2 text-xs font-bold text-slate-500 border-b border-slate-200 flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-sm text-slate-400">folder_open</span>{{ groupName || '未分组' }}
+                    </div>
+                    <div class="divide-y divide-slate-50">
+                      <div v-for="m in models" :key="m.id" class="px-4 py-2.5 flex justify-between items-center hover:bg-blue-50/30 group transition-colors">
+                        <div class="flex items-center gap-3 min-w-0">
+                          <div class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm shrink-0">
+                            <span class="material-symbols-outlined text-slate-500 text-[16px]">smart_toy</span>
+                          </div>
+                          <div class="flex flex-col min-w-0">
+                            <div class="flex items-center gap-2">
+                              <span class="text-sm font-medium text-slate-800 truncate">{{ m.model_name || m.model_id }}</span>
+                              <el-tag v-if="m.is_default" size="small" type="success" effect="dark" round class="!text-[10px] !h-4 !leading-4">默认</el-tag>
+                            </div>
+                            <span v-if="m.model_name && m.model_name !== m.model_id" class="text-xs text-slate-400 font-mono truncate">{{ m.model_id }}</span>
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <el-button v-if="!m.is_default" size="small" round class="!px-2 !h-6 !text-xs" @click="handleSetDefault(m)">设默认</el-button>
+                          <el-button link size="small" @click="editModel(m)"><span class="material-symbols-outlined text-[16px] text-slate-400 hover:text-blue-500">edit</span></el-button>
+                          <el-button link type="danger" size="small" @click="handleDeleteModel(m)"><span class="material-symbols-outlined text-[16px]">remove</span></el-button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
+            <div class="w-20 h-20 mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+              <span class="material-symbols-outlined text-4xl text-slate-300">hub</span>
+            </div>
+            <p class="text-sm text-slate-500 font-medium">请在左侧选择或添加提供商</p>
+          </div>
         </div>
+        <!-- 全局网络设置 -->
+        <el-card shadow="never" class="!rounded-xl !border-slate-200 mt-6">
+          <template #header>
+            <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
+              <span class="material-symbols-outlined text-blue-500 text-[18px]">router</span>全局网络设置
+            </div>
+          </template>
+          <el-form :model="networkConfig" label-position="top" size="small" class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            <div class="col-span-full flex items-center justify-between mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+              <span class="text-sm font-medium text-slate-700">启用 SOCKS 代理</span>
+              <el-switch v-model="networkConfig.proxyEnabled" @change="saveNetworkConfig" />
+            </div>
+            <template v-if="networkConfig.proxyEnabled">
+              <el-form-item label="代理地址"><el-input v-model="networkConfig.proxyUrl" placeholder="127.0.0.1:7890" @change="saveNetworkConfig" /></el-form-item>
+              <el-form-item label="请求超时 (秒)"><el-input-number v-model="networkConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" @change="saveNetworkConfig" /></el-form-item>
+              <el-form-item label="代理账号"><el-input v-model="networkConfig.proxyUsername" @change="saveNetworkConfig" /></el-form-item>
+              <el-form-item label="代理密码"><el-input v-model="networkConfig.proxyPassword" type="password" @change="saveNetworkConfig" /></el-form-item>
+            </template>
+            <template v-else>
+              <el-form-item label="请求超时 (秒)"><el-input-number v-model="networkConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" @change="saveNetworkConfig" /></el-form-item>
+            </template>
+          </el-form>
+        </el-card>
       </el-tab-pane>
+
+      <!-- ========== Prompt 设置 Tab ========== -->
+      <el-tab-pane label="Prompt 设置" name="prompt">
+        <el-card shadow="never" class="!rounded-xl !border-slate-200">
+          <template #header>
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-[#2b8cee]">edit_note</span>
+              <span class="font-bold text-lg">Prompt 模板设置</span>
+            </div>
+          </template>
+          <el-form label-position="top" class="max-w-3xl">
+            <el-form-item label="OCR 识别 Prompt 模板">
+              <el-input v-model="ocrPrompt" type="textarea" :rows="5" placeholder="请识别图片中的医疗检查报告..." />
+            </el-form-item>
+            <el-form-item label="AI 分析 Prompt 模板">
+              <el-input v-model="aiPrompt" type="textarea" :rows="5" placeholder="请根据以下检查数据..." />
+            </el-form-item>
+          </el-form>
+          <div class="flex justify-end mt-2">
+            <el-button type="primary" @click="savePrompts" :loading="savingPrompt">保存 Prompt 模板</el-button>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
 
       <el-tab-pane label="检查项目" name="project">
         <el-card shadow="never" class="!rounded-xl !border-slate-200">
@@ -284,29 +350,76 @@
         </template>
       </el-dialog>
     </el-drawer>
+
+    <!-- 新增/编辑提供商弹窗 -->
+    <el-dialog v-model="showProviderDialog" :title="editingProviderObj ? '编辑提供商' : '添加提供商'" width="380px" :close-on-click-modal="false">
+      <div class="flex justify-center mb-4">
+        <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold text-white"
+             :style="{ background: getProviderColor(providerForm.type) }">
+          {{ (providerForm.name || 'P').charAt(0).toUpperCase() }}
+        </div>
+      </div>
+      <el-form :model="providerForm" label-position="top" size="default">
+        <el-form-item label="提供商名称" required>
+          <el-input v-model="providerForm.name" placeholder="例如 OpenAI" maxlength="32" />
+        </el-form-item>
+        <el-form-item label="提供商类型" required>
+          <el-select v-model="providerForm.type" class="w-full">
+            <el-option label="OpenAI" value="openai" />
+            <el-option label="Gemini" value="gemini" />
+            <el-option label="Anthropic" value="anthropic" />
+            <el-option label="Azure OpenAI" value="azure-openai" />
+            <el-option label="Ollama" value="ollama" />
+            <el-option label="自定义 (Custom)" value="custom" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showProviderDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmSaveProvider">{{ editingProviderObj ? '保存' : '添加' }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新增/编辑模型弹窗 -->
+    <el-dialog v-model="showModelDialog" :title="editingModelObj ? '编辑模型' : '添加模型'" width="400px" :close-on-click-modal="false">
+      <el-form :model="modelForm" label-position="top">
+        <el-form-item label="模型 ID" required>
+          <el-input v-model="modelForm.modelId" placeholder="例如 gpt-3.5-turbo" />
+          <span class="text-xs text-slate-400 mt-1">调用 API 时使用的真实模型 ID</span>
+        </el-form-item>
+        <el-form-item label="模型名称 (可选)">
+          <el-input v-model="modelForm.modelName" placeholder="例如 GPT-4o" />
+        </el-form-item>
+        <el-form-item label="分组名称 (可选)">
+          <el-input v-model="modelForm.groupName" placeholder="例如 ChatGPT" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showModelDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmSaveModel">{{ editingModelObj ? '保存' : '添加模型' }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
 
-// ===== AI 配置 =====
+// ===== 多提供商管理 (ISS-060~066) =====
 const activeTab = ref('ai')
-const showApiKey = ref(false)
-const connectionStatus = ref('unknown')
-const testing = ref(false)
-const savingAi = ref(false)
+const searchProvider = ref('')
+const activeProviderId = ref('')
+const testingProviderId = ref('')
 const savingPrompt = ref(false)
-const newModel = ref('')
 
-const aiConfig = reactive({
-  apiUrl: '',
-  apiKey: '',
-  models: [],
-  defaultModel: '',
+const providers = ref([])
+const providerModels = ref([])
+
+// 网络配置（全局）
+const networkConfig = reactive({
   proxyEnabled: false,
   proxyUrl: '',
   proxyUsername: '',
@@ -317,70 +430,101 @@ const aiConfig = reactive({
 const ocrPrompt = ref('')
 const aiPrompt = ref('')
 
-const addModel = () => {
-  const model = newModel.value.trim()
-  if (model && !aiConfig.models.includes(model)) {
-    aiConfig.models.push(model)
-    newModel.value = ''
-  }
-}
+// Provider / Model 弹窗
+const showProviderDialog = ref(false)
+const showModelDialog = ref(false)
+const editingProviderObj = ref(null)
+const editingModelObj = ref(null)
+const providerForm = reactive({ name: '', type: 'openai' })
+const modelForm = reactive({ modelId: '', modelName: '', groupName: '' })
 
-const removeModel = (index) => {
-  const removed = aiConfig.models.splice(index, 1)
-  if (aiConfig.defaultModel === removed[0]) {
-    aiConfig.defaultModel = aiConfig.models[0] || ''
-  }
-}
+// ===== 计算属性 =====
+const filteredProviders = computed(() => {
+  if (!searchProvider.value) return providers.value
+  return providers.value.filter(p => p.name.toLowerCase().includes(searchProvider.value.toLowerCase()))
+})
 
-const loadAiConfig = async () => {
+const activeProvider = computed(() => providers.value.find(p => p.id === activeProviderId.value))
+
+const groupedModels = computed(() => {
+  const groups = {}
+  for (const m of providerModels.value) {
+    const g = m.group_name || ''
+    if (!groups[g]) groups[g] = []
+    groups[g].push(m)
+  }
+  return groups
+})
+
+// ===== 颜色映射 =====
+const PROVIDER_COLORS = {
+  openai: '#10a37f',
+  gemini: '#4285f4',
+  anthropic: '#d97706',
+  'azure-openai': '#0078d4',
+  ollama: '#334155',
+  custom: '#6366f1',
+}
+const getProviderColor = (type) => PROVIDER_COLORS[type] || '#6366f1'
+
+// ===== 加载数据 =====
+const loadProviders = async () => {
   try {
-    const url = await invoke('get_config', { key: 'ai_api_url' })
-    const key = await invoke('get_config', { key: 'ai_api_key' })
-    const models = await invoke('get_config', { key: 'ai_models' })
-    const defaultModel = await invoke('get_config', { key: 'ai_default_model' })
-    const proxyEnabled = await invoke('get_config', { key: 'proxy_enabled' })
-    const proxyUrl = await invoke('get_config', { key: 'proxy_url' })
-    const proxyUsername = await invoke('get_config', { key: 'proxy_username' })
-    const proxyPassword = await invoke('get_config', { key: 'proxy_password' })
-    const timeout = await invoke('get_config', { key: 'ai_timeout' })
+    providers.value = await invoke('list_providers')
+    if (providers.value.length > 0 && !activeProviderId.value) {
+      activeProviderId.value = providers.value[0].id
+    }
+    if (activeProviderId.value) {
+      await loadModels()
+    }
+  } catch (e) {
+    console.error('加载提供商失败:', e)
+  }
+}
 
-    aiConfig.apiUrl = url || ''
-    aiConfig.apiKey = key || ''
-    aiConfig.models = models ? JSON.parse(models) : []
-    aiConfig.defaultModel = defaultModel || ''
-    aiConfig.proxyEnabled = proxyEnabled === 'true'
-    aiConfig.proxyUrl = proxyUrl || ''
-    aiConfig.proxyUsername = proxyUsername || ''
-    aiConfig.proxyPassword = proxyPassword || ''
-    aiConfig.timeout = timeout ? parseInt(timeout) : 120
+const loadModels = async () => {
+  if (!activeProviderId.value) { providerModels.value = []; return }
+  try {
+    providerModels.value = await invoke('list_provider_models', { providerId: activeProviderId.value })
+  } catch (e) {
+    providerModels.value = []
+  }
+}
 
+const selectProvider = async (id) => {
+  activeProviderId.value = id
+  await loadModels()
+}
+
+const loadNetworkConfig = async () => {
+  try {
+    networkConfig.proxyEnabled = (await invoke('get_config', { key: 'proxy_enabled' })) === 'true'
+    networkConfig.proxyUrl = (await invoke('get_config', { key: 'proxy_url' })) || ''
+    networkConfig.proxyUsername = (await invoke('get_config', { key: 'proxy_username' })) || ''
+    networkConfig.proxyPassword = (await invoke('get_config', { key: 'proxy_password' })) || ''
+    const t = await invoke('get_config', { key: 'ai_timeout' })
+    networkConfig.timeout = t ? parseInt(t) : 120
+  } catch (e) { console.error(e) }
+}
+
+const loadPrompts = async () => {
+  try {
     const ocrTpl = await invoke('get_config', { key: 'ocr_prompt_template' })
     const aiTpl = await invoke('get_config', { key: 'ai_analysis_prompt_template' })
     ocrPrompt.value = ocrTpl || '请识别图片中的医疗检查报告，提取所有检查指标的名称、数值、单位和参考范围，请严格按照以下JSON格式返回: [ { "name": "指标名称", "value": "数值", "unit": "单位", "reference_range": "参考范围", "status": "正常/异常" } ] 注意：reference_range 必须是字符串，表示参考范围（如 "3.5-5.5"）。2，status必须是 "正常" 或 "异常"。3，只返回JSON数组，不要包含markdown代码块或其他文字。'
     aiPrompt.value = aiTpl || '请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。'
-  } catch (e) {
-    console.error('加载配置失败:', e)
-  }
+  } catch (e) { console.error(e) }
 }
 
-const saveAiConfig = async () => {
-  savingAi.value = true
+// ===== 保存 =====
+const saveNetworkConfig = async () => {
   try {
-    await invoke('save_config', { key: 'ai_api_url', value: aiConfig.apiUrl })
-    await invoke('save_config', { key: 'ai_api_key', value: aiConfig.apiKey })
-    await invoke('save_config', { key: 'ai_models', value: JSON.stringify(aiConfig.models) })
-    await invoke('save_config', { key: 'ai_default_model', value: aiConfig.defaultModel })
-    await invoke('save_config', { key: 'proxy_enabled', value: String(aiConfig.proxyEnabled) })
-    await invoke('save_config', { key: 'proxy_url', value: aiConfig.proxyUrl })
-    await invoke('save_config', { key: 'proxy_username', value: aiConfig.proxyUsername })
-    await invoke('save_config', { key: 'proxy_password', value: aiConfig.proxyPassword })
-    await invoke('save_config', { key: 'ai_timeout', value: String(aiConfig.timeout) })
-    ElMessage.success('AI 配置保存成功')
-  } catch (e) {
-    ElMessage.error('保存失败: ' + e)
-  } finally {
-    savingAi.value = false
-  }
+    await invoke('save_config', { key: 'proxy_enabled', value: String(networkConfig.proxyEnabled) })
+    await invoke('save_config', { key: 'proxy_url', value: networkConfig.proxyUrl })
+    await invoke('save_config', { key: 'proxy_username', value: networkConfig.proxyUsername })
+    await invoke('save_config', { key: 'proxy_password', value: networkConfig.proxyPassword })
+    await invoke('save_config', { key: 'ai_timeout', value: String(networkConfig.timeout) })
+  } catch (e) { console.error(e) }
 }
 
 const savePrompts = async () => {
@@ -396,25 +540,141 @@ const savePrompts = async () => {
   }
 }
 
-const testConnection = async () => {
-  testing.value = true
-  connectionStatus.value = 'unknown'
+const saveProviderField = async (p) => {
   try {
-    if (!aiConfig.apiUrl || !aiConfig.apiKey) {
-      ElMessage.warning('请先填写 API 地址和 Key')
-      return
+    await invoke('update_provider', {
+      id: p.id,
+      apiKey: p.api_key,
+      apiUrl: p.api_url,
+    })
+  } catch (e) { ElMessage.error('保存失败: ' + e) }
+}
+
+const toggleProviderEnabled = async (p) => {
+  try {
+    await invoke('update_provider', { id: p.id, enabled: p.enabled })
+  } catch (e) {
+    ElMessage.error('切换失败: ' + e)
+    p.enabled = !p.enabled
+  }
+}
+
+// ===== Provider CRUD =====
+const openAddProviderDialog = () => {
+  editingProviderObj.value = null
+  providerForm.name = ''
+  providerForm.type = 'openai'
+  showProviderDialog.value = true
+}
+
+const editProvider = (p) => {
+  editingProviderObj.value = p
+  providerForm.name = p.name
+  providerForm.type = p.type
+  showProviderDialog.value = true
+}
+
+const confirmSaveProvider = async () => {
+  if (!providerForm.name.trim()) { ElMessage.warning('请输入名称'); return }
+  try {
+    if (editingProviderObj.value) {
+      await invoke('update_provider', {
+        id: editingProviderObj.value.id,
+        name: providerForm.name,
+        providerType: providerForm.type,
+      })
+      ElMessage.success('提供商已更新')
+    } else {
+      const newP = await invoke('create_provider', {
+        name: providerForm.name,
+        providerType: providerForm.type,
+      })
+      activeProviderId.value = newP.id
     }
-    // 先保存配置，确保后端能读取到最新值
-    await saveAiConfig()
-    // 调用后端真实测试命令
-    const result = await invoke('test_ai_connection')
-    connectionStatus.value = 'success'
+    showProviderDialog.value = false
+    await loadProviders()
+  } catch (e) { ElMessage.error('' + e) }
+}
+
+const delProvider = async (id) => {
+  try {
+    await ElMessageBox.confirm('删除提供商将同时删除其下所有模型，确认继续？', '确认', { type: 'warning' })
+    await invoke('delete_provider', { id })
+    if (activeProviderId.value === id) {
+      activeProviderId.value = providers.value.length > 1 ? providers.value.find(p => p.id !== id)?.id || '' : ''
+    }
+    await loadProviders()
+    ElMessage.success('已删除')
+  } catch (e) { if (e !== 'cancel') ElMessage.error('' + e) }
+}
+
+// ===== Model CRUD =====
+const openAddModelDialog = () => {
+  editingModelObj.value = null
+  modelForm.modelId = ''
+  modelForm.modelName = ''
+  modelForm.groupName = ''
+  showModelDialog.value = true
+}
+
+const editModel = (m) => {
+  editingModelObj.value = m
+  modelForm.modelId = m.model_id
+  modelForm.modelName = m.model_name
+  modelForm.groupName = m.group_name
+  showModelDialog.value = true
+}
+
+const confirmSaveModel = async () => {
+  if (!modelForm.modelId.trim()) { ElMessage.warning('模型 ID 为必填项'); return }
+  try {
+    if (editingModelObj.value) {
+      await invoke('update_model_info', {
+        id: editingModelObj.value.id,
+        modelId: modelForm.modelId.trim(),
+        modelName: modelForm.modelName.trim() || null,
+        groupName: modelForm.groupName.trim() || null,
+      })
+      ElMessage.success('模型已更新')
+    } else {
+      await invoke('add_model', {
+        providerId: activeProviderId.value,
+        modelId: modelForm.modelId.trim(),
+        modelName: modelForm.modelName.trim() || null,
+        groupName: modelForm.groupName.trim() || null,
+      })
+    }
+    showModelDialog.value = false
+    await loadModels()
+  } catch (e) { ElMessage.error('' + e) }
+}
+
+const handleDeleteModel = async (m) => {
+  try {
+    await invoke('delete_model', { id: m.id })
+    await loadModels()
+  } catch (e) { ElMessage.error('' + e) }
+}
+
+const handleSetDefault = async (m) => {
+  try {
+    await invoke('set_default_model', { id: m.id })
+    await loadModels()
+    ElMessage.success('已设为全局默认模型')
+  } catch (e) { ElMessage.error('' + e) }
+}
+
+// ===== 连接测试 =====
+const testProviderConnection = async (p) => {
+  testingProviderId.value = p.id
+  try {
+    await saveProviderField(p) // 确保最新配置已保存
+    const result = await invoke('test_provider_connection', { providerId: p.id })
     ElMessage.success(result)
   } catch (e) {
-    connectionStatus.value = 'failed'
     ElMessage.error('连接测试失败: ' + e)
   } finally {
-    testing.value = false
+    testingProviderId.value = ''
   }
 }
 
@@ -732,7 +992,9 @@ const handleRestoreData = async () => {
 
 // ===== 初始化 =====
 onMounted(() => {
-  loadAiConfig()
+  loadProviders()
+  loadNetworkConfig()
+  loadPrompts()
   loadProjects()
 })
 </script>

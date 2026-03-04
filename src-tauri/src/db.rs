@@ -162,6 +162,33 @@ impl Database {
                 content         TEXT NOT NULL,
                 created_at      TEXT NOT NULL
             );
+
+            -- 10. AI 提供商表
+            CREATE TABLE IF NOT EXISTS ai_providers (
+                id              TEXT PRIMARY KEY,
+                name            TEXT NOT NULL,
+                type            TEXT NOT NULL DEFAULT 'openai',
+                api_key         TEXT DEFAULT '',
+                api_url         TEXT DEFAULT '',
+                enabled         INTEGER DEFAULT 1,
+                sort_order      INTEGER DEFAULT 0,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );
+
+            -- 11. AI 模型表
+            CREATE TABLE IF NOT EXISTS ai_models (
+                id              TEXT PRIMARY KEY,
+                provider_id     TEXT NOT NULL,
+                model_id        TEXT NOT NULL,
+                model_name      TEXT DEFAULT '',
+                group_name      TEXT DEFAULT '',
+                is_default      INTEGER DEFAULT 0,
+                enabled         INTEGER DEFAULT 1,
+                sort_order      INTEGER DEFAULT 0,
+                created_at      TEXT NOT NULL,
+                FOREIGN KEY (provider_id) REFERENCES ai_providers(id)
+            );
             ",
         )?;
         Ok(())

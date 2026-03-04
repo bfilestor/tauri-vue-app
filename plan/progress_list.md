@@ -131,6 +131,28 @@
 ---
 
 
+## Epic 10：多 AI 提供商接入
+
+| Issue | 描述 | 状态 | 依赖 | 测试 | 备注 |
+|-------|------|------|------|------|------|
+| ISS-053 | [后端] 新增 ai_providers 和 ai_models 表 | Done | ISS-006 | Build ✅ | db.rs 新增两张表 |
+| ISS-054 | [后端] 旧数据向前兼容迁移 | Done | ISS-053 | Build ✅ | migrate_legacy_config() |
+| ISS-055 | [后端] Provider CRUD Commands | Done | ISS-053 | Build ✅ | commands/provider.rs |
+| ISS-056 | [后端] Model CRUD Commands | Done | ISS-055 | Build ✅ | commands/provider.rs |
+| ISS-057 | [后端] Provider 连接测试 Command | Done | ISS-055, ISS-013 | Build ✅ | test_provider_connection |
+| ISS-058 | [后端] 重构 http_client 获取默认提供商 | Done | ISS-053, ISS-056 | Build ✅ | load_default_provider_config |
+| ISS-059 | [后端] 更新 OCR 和 AI 使用新配置 | Done | ISS-058 | Build ✅ | load_ai_config 自动 fallback |
+| ISS-060 | [前端] Tab 拆分（模型服务 + Prompt 设置） | Done | ISS-014 | Build ✅ | 两个独立 Tab |
+| ISS-061 | [前端] 提供商列表侧边栏 UI | Done | ISS-055, ISS-060 | Build ✅ | 搜索+Switch+高亮 |
+| ISS-062 | [前端] 提供商详情配置面板 | Done | ISS-061, ISS-057 | Build ✅ | API Key/URL+检测 |
+| ISS-063 | [前端] 模型列表与管理 UI | Done | ISS-062, ISS-056 | Build ✅ | 分组+默认标签+操作 |
+| ISS-064 | [前端] 添加/编辑提供商弹窗 | Done | ISS-061 | Build ✅ | 含首字母头像预览 |
+| ISS-065 | [前端] 添加/编辑模型弹窗 | Done | ISS-063 | Build ✅ | model_id+name+group |
+| ISS-066 | [前端] 全局网络与高级设置面板 | Done | ISS-060 | Build ✅ | 代理+超时设置 |
+
+---
+
+
 
 ## 汇总统计
 
@@ -140,7 +162,7 @@
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
-| Done | 50 |
-| **合计** | **50** |
+| Done | 64 |
+| **合计** | **64** |
 
 
