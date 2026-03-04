@@ -74,6 +74,7 @@ pub fn run() {
             commands::ai::chat_with_ai,
             commands::ai::get_chat_history,
             commands::ai::clear_chat_history,
+            commands::mobile::get_local_ips,
             commands::mobile::start_mobile_server,
             commands::mobile::stop_mobile_server,
 

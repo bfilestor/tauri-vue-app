@@ -488,6 +488,39 @@ const handleGlobalKey = (e) => {
   }
 }
 
+const rotateLeft = () => {
+  rotate(-Math.PI / 2)
+}
+
+const rotateRight = () => {
+  rotate(Math.PI / 2)
+}
+
+const rotate = (angle) => {
+  if (!offscreenCanvas) return
+  
+  const newWidth = originalHeight
+  const newHeight = originalWidth
+  
+  const tempCanvas = document.createElement('canvas')
+  tempCanvas.width = newWidth
+  tempCanvas.height = newHeight
+  const tempCtx = tempCanvas.getContext('2d')
+  
+  tempCtx.translate(newWidth / 2, newHeight / 2)
+  tempCtx.rotate(angle)
+  tempCtx.translate(-originalWidth / 2, -originalHeight / 2)
+  tempCtx.drawImage(offscreenCanvas, 0, 0)
+  
+  originalWidth = newWidth
+  originalHeight = newHeight
+  offscreenCanvas = tempCanvas
+  offscreenCtx = tempCtx
+  
+  saveState()
+  fitToContainer()
+  render()
+}
 
 
 const updateImageInfo = () => {
@@ -544,6 +577,8 @@ defineExpose({
   reset,
   zoomIn,
   zoomOut,
+  rotateLeft,
+  rotateRight,
   exportImage
 })
 </script>

@@ -20,13 +20,17 @@
          <el-button type="primary" link @click="startServer" class="mt-2">重试</el-button>
       </div>
       
-      <div class="text-center space-y-3">
+      <div class="text-center space-y-3 w-full px-4">
         <h3 class="font-bold text-slate-700">请使用手机相机或微信扫码</h3>
-        <p class="text-xs text-slate-400 bg-slate-50 py-2 px-4 rounded-full inline-block">
-           💡 手机需与电脑连接同一 Wi-Fi
-        </p>
         
-        <div v-if="url" class="mt-6 pt-4 border-t border-slate-100 w-full px-8">
+        <div class="bg-slate-50 py-3 px-4 rounded-lg flex flex-col items-center gap-2">
+            <span class="text-xs text-slate-500">💡 手机需与电脑连接同一网络</span>
+            <el-select v-model="selectedIp" size="small" @change="onIpChange" class="w-48" placeholder="选择网络 IP" :disabled="loading">
+                <el-option v-for="ip in availableIps" :key="ip" :label="ip" :value="ip" />
+            </el-select>
+        </div>
+        
+        <div v-if="url" class="mt-4 pt-4 border-t border-slate-100 w-full px-4">
           <p class="text-xs text-slate-400 mb-1">或者在手机浏览器输入：</p>
           <a :href="url" target="_blank" class="text-blue-500 hover:underline font-mono bg-blue-50 px-2 py-1 rounded text-sm block truncate">
             {{ url }}
@@ -62,14 +66,17 @@ const loading = ref(false)
 const qrCodeUrl = ref('')
 const url = ref('')
 
-watch(() => props.modelValue, (val) => {
+const availableIps = ref([])
+const selectedIp = ref('')
+
+watch(() => props.modelValue, async (val) => {
   visible.value = val
   if (val) {
+    if (availableIps.value.length === 0) {
+      await initIps();
+    }
     if (!url.value) startServer()
   } else {
-    // We don't necessarily stop server on close to allow background upload? 
-    // Requirement says "Close dialog stops server" usually, or explicit stop. 
-    // Let's stop it for security.
     stopServer()
   }
 })
@@ -78,10 +85,37 @@ watch(visible, (val) => {
   emit('update:modelValue', val)
 })
 
+const initIps = async () => {
+    try {
+        const ips = await invoke('get_local_ips');
+        availableIps.value = ips;
+        const configIp = await invoke('get_config', { key: 'mobile_upload_ip' });
+        if (configIp && ips.includes(configIp)) {
+            selectedIp.value = configIp;
+        } else if (ips.length > 0) {
+            selectedIp.value = ips[0];
+        }
+    } catch (e) {
+        console.error('Failed to init IPs:', e);
+    }
+}
+
+const onIpChange = async (newIp) => {
+    try {
+        await invoke('save_config', { key: 'mobile_upload_ip', value: newIp });
+        await startServer();
+    } catch (e) {
+        console.error('Failed to update IP config:', e);
+    }
+}
+
 const startServer = async () => {
   loading.value = true
+  // Stop existing server first if any
+  await stopServer();
+  
   try {
-    const res = await invoke('start_mobile_server')
+    const res = await invoke('start_mobile_server', { selectedIp: selectedIp.value })
     url.value = res.url
     qrCodeUrl.value = res.qr_code
   } catch (e) {

@@ -180,8 +180,12 @@ async fn upload(
     }
 }
 
-pub async fn start_server(app_handle: AppHandle) -> Result<(String, String), String> {
-    let ip = local_ip_address::local_ip().map_err(|e| format!("无法获取本机IP: {}", e))?;
+pub async fn start_server(app_handle: AppHandle, selected_ip: Option<String>) -> Result<(String, String), String> {
+    let fallback_ip = local_ip_address::local_ip().map_err(|e| format!("无法获取本机IP: {}", e))?;
+    let ip = match selected_ip {
+        Some(s) if !s.is_empty() => s.parse::<std::net::IpAddr>().unwrap_or(fallback_ip),
+        _ => fallback_ip,
+    };
     
     // Bind to 0 port to get random available port
     let addr = SocketAddr::from((ip, 0));

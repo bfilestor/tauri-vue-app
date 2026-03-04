@@ -104,6 +104,7 @@
 | ISS-041 | [前端] Canvas 图片编辑器组件基础 | Done | - | Passed | 基础 Canvas 封装 + 缩放/平移 |
 | ISS-042 | [前端] 裁剪功能实现 | Done | ISS-041 | Passed | 矩形裁剪 + 确认/取消 |
 | ISS-043 | [前端] 区域马赛克功能 | Done | ISS-041 | Passed | 像素化模糊 |
+| ISS-052 | [前端] 图片旋转功能实现 | Done | ISS-041 | Passed | 左转/右转 90 度 |
 | ISS-044 | [前端] 脱敏工作台页面 (`/desensitize`) | Done | ISS-041 | Passed | 布局/路由/工具栏 |
 | ISS-045 | [前端] 文件 IO 集成 (Open/Save) | Done | ISS-044 | Passed | fs/dialog 插件集成 |
 
@@ -139,7 +140,7 @@
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
-| Done | 49 |
-| **合计** | **49** |
+| Done | 50 |
+| **合计** | **50** |
 
 

@@ -396,6 +396,7 @@
   - 加载本地图片
   - 缩放查看 (Zoom In/Out)
   - 撤销 (Undo) / 重置 (Reset)
+  - 旋转 (RotateLeft / RotateRight)
 - **裁剪 (Crop)**：
   - 自由矩形框选
   - 确认裁剪后保留选区

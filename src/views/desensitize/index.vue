@@ -87,6 +87,28 @@
 
         <div class="h-px w-8 bg-slate-200 my-2"></div>
 
+        <!-- Rotate Controls -->
+        <div class="flex flex-col items-center gap-2">
+            <button 
+                @click="handleRotateLeft"
+                :disabled="!hasImage"
+                class="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-white border border-slate-100 shadow-sm"
+                title="向左旋转"
+            >
+                <span class="material-symbols-outlined text-xl">rotate_left</span>
+            </button>
+            <button 
+                @click="handleRotateRight"
+                :disabled="!hasImage"
+                class="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-white border border-slate-100 shadow-sm"
+                title="向右旋转"
+            >
+                <span class="material-symbols-outlined text-xl">rotate_right</span>
+            </button>
+        </div>
+
+        <div class="h-px w-8 bg-slate-200 my-2"></div>
+
         <!-- Zoom Controls -->
         <div class="flex flex-col items-center gap-2">
             <button 
@@ -262,6 +284,14 @@ const handleZoomIn = () => {
 
 const handleZoomOut = () => {
     editorRef.value?.zoomOut()
+}
+
+const handleRotateLeft = () => {
+    editorRef.value?.rotateLeft()
+}
+
+const handleRotateRight = () => {
+    editorRef.value?.rotateRight()
 }
 
 const handleClear = async () => {
