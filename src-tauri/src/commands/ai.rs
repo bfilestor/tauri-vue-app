@@ -36,15 +36,31 @@ pub async fn start_ai_analysis(
         let model = http_client::get_default_model(&conn);
 
         // 获取 AI 分析 Prompt 模板
-        let ai_prompt: String = conn
+        let ai_analysis_prompt: String = conn
             .query_row(
                 "SELECT config_value FROM system_config WHERE config_key = 'ai_analysis_prompt_template'",
                 [],
                 |row| row.get(0),
             )
             .unwrap_or_else(|_| {
-                "请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。请以中文回复，使用Markdown格式。".to_string()
+                "你是一位专业的医疗健康分析师。请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。请以中文回复，使用Markdown格式。".to_string()
             });
+
+        // 获取用户自定义 Prompt（患者情况说明）
+        let user_custom_prompt: String = conn
+            .query_row(
+                "SELECT config_value FROM system_config WHERE config_key = 'user_custom_prompt_template'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+
+        // 拼接系统级 Prompt：用户自定义在前，AI 分析指令在后
+        let ai_prompt = if user_custom_prompt.trim().is_empty() {
+            ai_analysis_prompt
+        } else {
+            format!("{}\n\n{}", user_custom_prompt.trim(), ai_analysis_prompt.trim())
+        };
 
         // 获取当前检查记录的 OCR 数据
         let checkup_date: String = conn
@@ -539,12 +555,39 @@ pub async fn chat_with_ai(
     use tauri::Emitter;
 
     // 1. 获取配置和上下文
-    let (config, model, chat_history) = {
+    let (config, model, chat_history, system_prompt) = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
         let config = http_client::load_ai_config(&conn)?;
         let model = http_client::get_default_model(&conn);
+
+        // 获取用户自定义 Prompt（患者情况说明）
+        let user_custom_prompt: String = conn
+            .query_row(
+                "SELECT config_value FROM system_config WHERE config_key = 'user_custom_prompt_template'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+
+        // 获取 AI 分析 Prompt 模板
+        let ai_analysis_prompt: String = conn
+            .query_row(
+                "SELECT config_value FROM system_config WHERE config_key = 'ai_analysis_prompt_template'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| {
+                "请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。请以中文回复，使用Markdown格式。".to_string()
+            });
+
+        // 拼接系统 Prompt：用户自定义在前，AI 分析在后
+        let system_prompt = if user_custom_prompt.trim().is_empty() {
+            ai_analysis_prompt
+        } else {
+            format!("{}\n\n{}", user_custom_prompt.trim(), ai_analysis_prompt.trim())
+        };
 
         // 获取最近 10 条历史记录作为上下文
         let mut stmt = conn
@@ -560,7 +603,7 @@ pub async fn chat_with_ai(
             .map_err(|e| e.to_string())?;
 
         history.reverse(); // 恢复时间顺序
-        (config, model, history)
+        (config, model, history, system_prompt)
     };
 
     let user_msg_id = uuid::Uuid::new_v4().to_string();
@@ -589,7 +632,7 @@ pub async fn chat_with_ai(
     let mut messages = Vec::new();
     messages.push(serde_json::json!({
         "role": "system",
-        "content": "你是一位专业的医疗健康助手。请简明扼要地回答用户的问题。"
+        "content": system_prompt
     }));
 
     for (role, content) in chat_history {

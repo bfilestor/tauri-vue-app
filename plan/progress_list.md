@@ -150,6 +150,16 @@
 | ISS-065 | [前端] 添加/编辑模型弹窗 | Done | ISS-063 | Build ✅ | model_id+name+group |
 | ISS-066 | [前端] 全局网络与高级设置面板 | Done | ISS-060 | Build ✅ | 代理+超时设置 |
 
+
+
+## Epic 11：增强 Prompt 管理
+
+| Issue | 描述 | 状态 | 依赖 | 测试 | 备注 |
+|-------|------|------|------|------|------|
+| ISS-067 | [前端] Prompt 设置页面开发者模式（7次点击触发） | Done | ISS-060 | Build ✅ | 标题栏点击计数 + 隐藏/显示保护 Prompt |
+| ISS-068 | [前端] 新增患者情况说明 Prompt（用户自定义） | Done | ISS-060 | Build ✅ | user_custom_prompt_template 配置键 |
+| ISS-069 | [后端] chat_with_ai 整合用户自定义 + AI 分析 Prompt | Done | ISS-068 | Build ✅ | 系统 Prompt 拼接逻辑 |
+
 ---
 
 
@@ -162,7 +172,7 @@
 | Skip | 0 |
 | In Progress | 0 |
 | Test Passed | 0 |
-| Done | 64 |
-| **合计** | **64** |
+| Done | 67 |
+| **合计** | **67** |
 
 

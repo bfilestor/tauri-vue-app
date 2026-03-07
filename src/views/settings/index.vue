@@ -149,23 +149,116 @@
       </el-tab-pane>
 
       <!-- ========== Prompt 设置 Tab ========== -->
-      <el-tab-pane label="Prompt 设置" name="prompt">
+      <el-tab-pane label="患者信息" name="prompt">
         <el-card shadow="never" class="!rounded-xl !border-slate-200">
           <template #header>
-            <div class="flex items-center gap-3">
-              <span class="material-symbols-outlined text-[#2b8cee]">edit_note</span>
-              <span class="font-bold text-lg">Prompt 模板设置</span>
+            <!-- 标题栏：连续点击7次进入开发者模式 -->
+            <div
+              class="flex items-center justify-between cursor-pointer select-none transition-all duration-300"
+              @click="handleTitleClick"
+              :class="isDeveloperMode ? 'text-amber-700' : ''"
+              title=""
+            >
+              <div class="flex items-center gap-3">
+                <span
+                  class="material-symbols-outlined"
+                  :class="isDeveloperMode ? 'text-amber-500' : 'text-[#2b8cee]'"
+                >{{ isDeveloperMode ? 'code' : 'edit_note' }}</span>
+                <span class="font-bold text-lg">患者信息设置</span>
+                <el-tag
+                  v-if="isDeveloperMode"
+                  type="warning"
+                  size="small"
+                  effect="dark"
+                  class="!ml-1 animate-pulse"
+                >开发者模式</el-tag>
+              </div>
+              <div class="flex items-center gap-2">
+                <!-- 点击进度提示（点击3次以上开始显示） -->
+                <span
+                  v-if="titleClickCount >= 3 && titleClickCount < 7 && !isDeveloperMode"
+                  class="text-xs text-slate-400"
+                >还需点击 {{ 7 - titleClickCount }} 次</span>
+                <!-- 关闭开发者模式按钮 -->
+                <el-button
+                  v-if="isDeveloperMode"
+                  type="warning"
+                  size="small"
+                  plain
+                  @click.stop="exitDeveloperMode"
+                >
+                  <span class="material-symbols-outlined text-sm mr-1">lock</span>
+                  关闭开发者模式
+                </el-button>
+              </div>
             </div>
           </template>
-          <el-form label-position="top" class="max-w-3xl">
-            <el-form-item label="OCR 识别 Prompt 模板">
-              <el-input v-model="ocrPrompt" type="textarea" :rows="5" placeholder="请识别图片中的医疗检查报告..." />
-            </el-form-item>
-            <el-form-item label="AI 分析 Prompt 模板">
-              <el-input v-model="aiPrompt" type="textarea" :rows="5" placeholder="请根据以下检查数据..." />
-            </el-form-item>
+
+          <!-- 开发者模式警告横幅 -->
+          <div
+            v-if="isDeveloperMode"
+            class="mb-6 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3"
+          >
+            <span class="material-symbols-outlined text-amber-500 text-xl shrink-0">warning</span>
+            <div>
+              <p class="text-sm font-bold text-amber-800">当前处于开发者模式</p>
+              <p class="text-xs text-amber-600 mt-0.5">OCR 识别 Prompt 和 AI 问答 Prompt 均已显示并可编辑，请谨慎操作以免影响系统功能。刷新页面后将自动退出开发者模式。</p>
+            </div>
+          </div>
+
+          <el-form label-position="top" class="max-w-3xl space-y-2">
+            <!-- ===== 仅开发者模式显示：OCR 识别 Prompt ===== -->
+            <div v-if="isDeveloperMode" class="p-4 bg-amber-50/50 border border-amber-100 rounded-xl">
+              <el-form-item>
+                <template #label>
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-amber-500">developer_mode</span>
+                    <span class="font-bold text-sm text-amber-800">OCR 识别 Prompt 模板</span>
+                    <el-tag size="small" type="warning" effect="plain">开发者专用</el-tag>
+                  </div>
+                </template>
+                <el-input v-model="ocrPrompt" type="textarea" :rows="6" placeholder="请识别图片中的医疗检查报告..." />
+              </el-form-item>
+            </div>
+
+            <!-- ===== 仅开发者模式显示：AI 问答 Prompt ===== -->
+            <div v-if="isDeveloperMode" class="p-4 bg-amber-50/50 border border-amber-100 rounded-xl">
+              <el-form-item>
+                <template #label>
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-amber-500">developer_mode</span>
+                    <span class="font-bold text-sm text-amber-800">AI 问答 Prompt 模板</span>
+                    <el-tag size="small" type="warning" effect="plain">开发者专用</el-tag>
+                  </div>
+                </template>
+                <el-input v-model="aiPrompt" type="textarea" :rows="6" placeholder="你是一位专业的医疗健康分析师。请根据以下检查数据..." />
+              </el-form-item>
+            </div>
+
+            <!-- ===== 始终显示：患者情况说明（用户自定义 Prompt）===== -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <el-form-item>
+                <template #label>
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="material-symbols-outlined text-sm text-[#2b8cee]">person</span>
+                    <span class="font-bold text-sm text-slate-800">患者情况说明</span>
+                  </div>
+                  <p class="text-xs text-slate-500 leading-relaxed">
+                    请在此填写患者的基本信息（年龄、性别、身高、体重、病史等）。此内容将作为背景信息随每次 AI 问答一起发送，无需每次重复填写。
+                  </p>
+                </template>
+                <el-input
+                  v-model="userCustomPrompt"
+                  type="textarea"
+                  :rows="10"
+                  placeholder="请输入患者情况说明，例如：&#10;患者基本信息：&#10;- 年龄：60岁&#10;- 性别：男&#10;- 身高：172cm  体重：75kg&#10;- 主要病史：高血压、慢性肾病3期&#10;- 当前用药：降压药&#10;- 其他说明：需定期检查肾功能和血常规"
+                />
+              </el-form-item>
+            </div>
           </el-form>
-          <div class="flex justify-end mt-2">
+
+          <div class="flex justify-end mt-4 gap-2">
+            <el-button @click="loadPrompts" :disabled="savingPrompt" plain>重置</el-button>
             <el-button type="primary" @click="savePrompts" :loading="savingPrompt">保存 Prompt 模板</el-button>
           </div>
         </el-card>
@@ -429,6 +522,36 @@ const networkConfig = reactive({
 
 const ocrPrompt = ref('')
 const aiPrompt = ref('')
+const userCustomPrompt = ref('')
+
+// ===== 开发者模式（Prompt 保护）=====
+const isDeveloperMode = ref(false)
+const titleClickCount = ref(0)
+let titleClickTimer = null
+
+const handleTitleClick = () => {
+  titleClickCount.value++
+  // 重置计时器：3秒内未再次点击则清零
+  clearTimeout(titleClickTimer)
+  titleClickTimer = setTimeout(() => {
+    if (!isDeveloperMode.value) {
+      titleClickCount.value = 0
+    }
+  }, 3000)
+
+  if (titleClickCount.value >= 7 && !isDeveloperMode.value) {
+    isDeveloperMode.value = true
+    titleClickCount.value = 0
+    clearTimeout(titleClickTimer)
+    ElMessage.success({ message: '已进入开发者模式，可编辑核心 Prompt 模板', type: 'warning', duration: 3000 })
+  }
+}
+
+const exitDeveloperMode = () => {
+  isDeveloperMode.value = false
+  titleClickCount.value = 0
+  ElMessage.info('已退出开发者模式')
+}
 
 // Provider / Model 弹窗
 const showProviderDialog = ref(false)
@@ -507,12 +630,18 @@ const loadNetworkConfig = async () => {
   } catch (e) { console.error(e) }
 }
 
+const DEFAULT_OCR_PROMPT = '你是一位专业的医疗影像识别专家。请识别图片中的医疗检查报告，提取所有检查指标的名称、数值、单位和参考范围，请严格按照以下JSON格式返回: [ { "name": "指标名称", "value": "数值", "unit": "单位", "reference_range": "参考范围", "status": "正常/异常" } ] 注意：reference_range 必须是字符串，表示参考范围（如 "3.5-5.5"）。2，status必须是 "正常" 或 "异常"。3，只返回JSON数组，不要包含markdown代码块或其他文字。'
+const DEFAULT_AI_PROMPT = '你是一位专业的医疗健康分析师。请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。'
+const DEFAULT_USER_CUSTOM_PROMPT = '患者基本信息：\n- 姓名：（患者姓名）\n- 年龄：（岁）\n- 性别：（男/女）\n- 身高：（cm）\n- 体重：（kg）\n- 主要病史：（现有疾病或既往病史）\n- 当前用药：（正在服用的药物）\n- 其他说明：（其他需要医生了解的情况）'
+
 const loadPrompts = async () => {
   try {
     const ocrTpl = await invoke('get_config', { key: 'ocr_prompt_template' })
     const aiTpl = await invoke('get_config', { key: 'ai_analysis_prompt_template' })
-    ocrPrompt.value = ocrTpl || '请识别图片中的医疗检查报告，提取所有检查指标的名称、数值、单位和参考范围，请严格按照以下JSON格式返回: [ { "name": "指标名称", "value": "数值", "unit": "单位", "reference_range": "参考范围", "status": "正常/异常" } ] 注意：reference_range 必须是字符串，表示参考范围（如 "3.5-5.5"）。2，status必须是 "正常" 或 "异常"。3，只返回JSON数组，不要包含markdown代码块或其他文字。'
-    aiPrompt.value = aiTpl || '请根据以下检查数据，综合分析患者的健康状况，指出异常指标，提供治疗建议和生活方式改善方案。'
+    const userTpl = await invoke('get_config', { key: 'user_custom_prompt_template' })
+    ocrPrompt.value = ocrTpl || DEFAULT_OCR_PROMPT
+    aiPrompt.value = aiTpl || DEFAULT_AI_PROMPT
+    userCustomPrompt.value = userTpl || DEFAULT_USER_CUSTOM_PROMPT
   } catch (e) { console.error(e) }
 }
 
@@ -530,8 +659,13 @@ const saveNetworkConfig = async () => {
 const savePrompts = async () => {
   savingPrompt.value = true
   try {
-    await invoke('save_config', { key: 'ocr_prompt_template', value: ocrPrompt.value })
-    await invoke('save_config', { key: 'ai_analysis_prompt_template', value: aiPrompt.value })
+    // 始终保存用户自定义 Prompt
+    await invoke('save_config', { key: 'user_custom_prompt_template', value: userCustomPrompt.value })
+    // 开发者模式下才保存核心 Prompt
+    if (isDeveloperMode.value) {
+      await invoke('save_config', { key: 'ocr_prompt_template', value: ocrPrompt.value })
+      await invoke('save_config', { key: 'ai_analysis_prompt_template', value: aiPrompt.value })
+    }
     ElMessage.success('Prompt 模板保存成功')
   } catch (e) {
     ElMessage.error('保存失败: ' + e)

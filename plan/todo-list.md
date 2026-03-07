@@ -360,6 +360,7 @@
 
 ---
 
+
 ## Epic 10：多 AI 提供商接入（Multi-Provider AI）
 
 > **优先级 P0** — 参考 Cherry Studio 的提供商管理架构，将系统从单 AI 提供商升级为多提供商 + 多模型
@@ -497,6 +498,49 @@
 
 ---
 
+
+## Epic 11：增强 Prompt 管理（Developer Mode + 患者情况说明）
+
+> **优先级 P0** — 防止用户误删核心 Prompt，新增患者情况说明模板优化 AI 问答质量
+
+### Feature 11.1：开发者模式保护
+
+#### Story 11.1.1：前端开发者模式触发逻辑
+- [x] **ISS-067** [前端] 在 `settings/index.vue` 的 Prompt 设置 Tab 中实现开发者模式
+  - 在「Prompt 模板设置」卡片标题栏添加连续点击计数器（7次）
+  - 进入开发者模式后：
+    - 显示 OCR 识别 Prompt 模板（原来已有，保留编辑能力）
+    - 显示 AI 问答 Prompt 模板（原来已有，保留编辑能力）
+    - 标题栏变色（橙色/黄色警告样式）提示当前处于开发者模式
+    - 显示「关闭开发者模式」按钮
+  - 正常模式：隐藏这两个 Prompt，仅显示用户自定义 Prompt
+  - 开发者模式状态不持久化（页面刷新后自动退出）
+  - 验收：连续点击标题 7 次后显示隐藏的 Prompt 编辑器，按关闭按钮后恢复
+  - 依赖：ISS-060
+
+### Feature 11.2：用户自定义 Prompt
+
+#### Story 11.2.1：新增患者情况说明 Prompt
+- [x] **ISS-068** [前端] 在 Prompt 设置页面新增「患者情况说明」区块
+  - 始终显示，不受开发者模式影响
+  - 使用 `el-input` type="textarea" 编辑该 Prompt
+  - 默认值包含患者年龄、性别、身高、体重、病史、用药等字段的模板
+  - 调用 `save_config` 以 `user_custom_prompt_template` 为 key 保存
+  - 验收：可编辑并保存患者情况说明 Prompt，刷新后内容不丢失
+  - 依赖：ISS-060
+
+### Feature 11.3：AI 问答整合患者情况
+
+#### Story 11.3.1：chat_with_ai 后端整合自定义 Prompt
+- [x] **ISS-069** [后端] 修改 `commands/ai.rs` 中的 `chat_with_ai` 函数
+  - 从数据库读取 `user_custom_prompt_template` 和 `ai_analysis_prompt_template`
+  - 将两者拼接为系统 Prompt：`{user_custom} + "\n\n" + {ai_analysis}`
+  - 替换原有硬编码系统 Prompt「你是一位专业的医疗健康助手...」
+  - 若 user_custom_prompt_template 为空，则仅使用 ai_analysis_prompt_template
+  - 验收：发送消息后，AI 使用包含患者信息的系统 Prompt 回复
+  - 依赖：ISS-068
+
+---
 
 ## 依赖关系图
 

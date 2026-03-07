@@ -1,4 +1,16 @@
 新增一个需求
+增强prompt设置功能
+1、OCR 识别 Prompt 模板和AI 问答 Prompt 模板
+目前OCR 识别 Prompt 模板 和AI 问答 Prompt 模板 是可编辑状态，为了防止用户误删，需要隐藏这两个prompt，
+当用户在Prompt 模板设置标题栏连续点击7次时，才开启开发者模式，
+开发者模式下，显示这两个prompt，并可以编辑。并显示一个关闭开发者模式的按钮，点击后关闭开发者模式。
+
+2、用户自定义 Prompt 模板，（标题：患者情况说明）
+新增一个用户自定义 Prompt 模板，这里一般要求输入患者的年龄，身高，体重，性别，及病史情况，将用户的输入和AI 问答 Prompt 模板结合起来，将结合后的内容发送给AI 问答。
+
+综述：开发模式下，有三个prompt，分别是OCR 识别 Prompt 模板，AI 问答 Prompt 模板，用户自定义 Prompt 模板，用户可以编辑这三个prompt，并可以关闭开发者模式。
+正常模式下，只有用户自定义 Prompt 模板，用户只能编辑该prompt。OCR 识别 Prompt 模板，AI 问答 Prompt 模板是隐藏的。
+最终，做ocr识别时，先使用OCR 识别 Prompt 模板调用ocr识别，然后将识别结果和用户自定义 Prompt 模板+AI 问答 Prompt 模板结合起来，将结合后的内容发送给AI 问答。
 
 仔细分析上述需求，并给出详细的实现方案，补充到plan/requirements.md中，
 并采用 Epic → Feature → Story → Issue 层级划分，标注依赖关系与优先级，详细划分issue，
