@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模型服务 - MedAI</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0f4f8;
+    --surface: #ffffff;
+    --surface-2: #f7fafc;
+    --border: #e2e8f0;
+    --border-active: #3b82f6;
+    --text-primary: #1a202c;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --accent-blue: #3b82f6;
+    --accent-blue-light: #eff6ff;
+    --accent-green: #10b981;
+    --accent-green-light: #ecfdf5;
+    --accent-amber: #f59e0b;
+    --accent-amber-light: #fffbeb;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --accent-purple-light: #f5f3ff;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+    --shadow-lg: 0 20px 40px rgba(0,0,0,0.1), 0 8px 20px rgba(0,0,0,0.06);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── Top Nav ── */
+  .top-nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    height: 56px;
+    gap: 32px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .logo {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.3px;
+  }
+
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 14px;
+  }
+
+  .nav-tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .nav-tab {
+    padding: 6px 16px;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-weight: 500;
+    transition: all 0.18s;
+    font-size: 13.5px;
+    border: none; background: none;
+  }
+
+  .nav-tab:hover { background: var(--bg); color: var(--text-primary); }
+  .nav-tab.active { background: var(--accent-blue-light); color: var(--accent-blue); }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .user-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b981, #3b82f6);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* ── Main Layout ── */
+  .main {
+    display: flex;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* ── Left Panel ── */
+  .left-panel {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── User Card ── */
+  .user-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border);
+  }
+
+  .user-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .user-avatar-lg {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10b981, #3b82f6);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 15px; font-weight: 700;
+  }
+
+  .user-name { font-weight: 600; font-size: 14px; }
+  .user-status {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex; align-items: center; gap: 4px;
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+  }
+
+  .quota-section { margin-bottom: 12px; }
+
+  .quota-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .quota-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--accent-blue);
+    font-size: 13px;
+  }
+
+  .progress-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 100px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 100px;
+    background: linear-gradient(90deg, var(--accent-blue), #6366f1);
+    width: 35%;
+    transition: width 0.5s ease;
+  }
+
+  .btn-recharge {
+    width: 100%;
+    padding: 8px;
+    border-radius: var(--radius-xs);
+    border: 1.5px solid var(--accent-blue);
+    background: var(--accent-blue-light);
+    color: var(--accent-blue);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.18s;
+    font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+
+  .btn-recharge:hover {
+    background: var(--accent-blue);
+    color: white;
+  }
+
+  /* ── Mode Toggle Card ── */
+  .mode-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border);
+  }
+
+  .mode-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 12px;
+  }
+
+  .mode-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mode-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+  }
+
+  .mode-option:hover { border-color: #cbd5e1; background: var(--bg); }
+
+  .mode-option.active {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-light);
+  }
+
+  .mode-option.active.green {
+    border-color: var(--accent-green);
+    background: var(--accent-green-light);
+  }
+
+  .mode-icon {
+    width: 32px; height: 32px;
+    border-radius: var(--radius-xs);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .mode-option.active .mode-icon {
+    background: var(--accent-blue);
+  }
+
+  .mode-option.active.green .mode-icon {
+    background: var(--accent-green);
+  }
+
+  .mode-option:not(.active) .mode-icon {
+    background: var(--border);
+  }
+
+  .mode-label { font-weight: 600; font-size: 13px; }
+  .mode-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+
+  .mode-radio {
+    margin-left: auto;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .mode-option.active .mode-radio {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue);
+  }
+
+  .mode-option.active.green .mode-radio {
+    border-color: var(--accent-green);
+    background: var(--accent-green);
+  }
+
+  .mode-radio::after {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: white;
+    display: none;
+  }
+
+  .mode-option.active .mode-radio::after { display: block; }
+
+  /* ── Right Panel ── */
+  .right-panel { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Panel Card ── */
+  .panel-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .panel-icon {
+    width: 34px; height: 34px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  .panel-title { font-weight: 700; font-size: 15px; }
+  .panel-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 100px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .badge-blue { background: var(--accent-blue-light); color: var(--accent-blue); }
+  .badge-green { background: var(--accent-green-light); color: var(--accent-green); }
+  .badge-amber { background: var(--accent-amber-light); color: var(--accent-amber); }
+  .badge-purple { background: var(--accent-purple-light); color: var(--accent-purple); }
+
+  /* ── General Mode Panel ── */
+  .general-mode-active {
+    padding: 22px;
+  }
+
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .pricing-card {
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    text-align: center;
+  }
+
+  .pricing-card:hover { border-color: var(--accent-blue); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .pricing-card.recommended {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-light);
+  }
+
+  .pricing-badge {
+    position: absolute;
+    top: -10px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent-blue);
+    color: white;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+
+  .pricing-calls {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .pricing-calls-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  .pricing-price {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-blue);
+  }
+
+  .pricing-price-unit { font-size: 12px; font-weight: 400; }
+  .pricing-per { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ── Payment Section ── */
+  .payment-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .payment-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+
+  .payment-tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border: none;
+    background: none;
+    font-family: inherit;
+    transition: all 0.18s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    border-bottom: 2px solid transparent;
+  }
+
+  .payment-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); background: var(--surface); }
+
+  .payment-content {
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .qr-wrapper {
+    width: 120px; height: 120px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px;
+    background: var(--surface-2);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Fake QR code pattern */
+  .qr-grid {
+    width: 80px; height: 80px;
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 1px;
+  }
+
+  .qr-cell {
+    border-radius: 1px;
+    background: var(--text-primary);
+  }
+
+  .qr-instructions {
+    flex: 1;
+  }
+
+  .qr-title {
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+  }
+
+  .qr-steps {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .qr-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+
+  .step-num {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .free-trial-banner {
+    background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+    border: 1px solid #6ee7b7;
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .free-trial-icon { font-size: 20px; }
+
+  .free-trial-text { font-size: 13px; color: #065f46; }
+  .free-trial-text strong { font-weight: 700; }
+
+  .btn-primary {
+    padding: 9px 20px;
+    border-radius: var(--radius-xs);
+    border: none;
+    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    color: white;
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59,130,246,0.35); }
+
+  .btn-secondary {
+    padding: 8px 16px;
+    border-radius: var(--radius-xs);
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.18s;
+    font-family: inherit;
+  }
+
+  .btn-secondary:hover { border-color: #94a3b8; color: var(--text-primary); }
+
+  /* ── Custom Mode Panel ── */
+  .custom-mode-panel { padding: 22px; }
+
+  .provider-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .provider-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+  }
+
+  .provider-item:hover { border-color: #cbd5e1; background: var(--bg); }
+  .provider-item.active { border-color: var(--accent-blue); background: var(--accent-blue-light); }
+
+  .provider-logo {
+    width: 36px; height: 36px;
+    border-radius: var(--radius-xs);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+    font-weight: 800;
+  }
+
+  .provider-name { font-weight: 600; font-size: 13.5px; }
+  .provider-meta { font-size: 11.5px; color: var(--text-muted); }
+
+  .toggle-switch {
+    margin-left: auto;
+    width: 38px; height: 22px;
+    border-radius: 100px;
+    background: var(--border);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch.on { background: var(--accent-green); }
+
+  .toggle-knob {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: white;
+    position: absolute;
+    top: 3px; left: 3px;
+    transition: left 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  .toggle-switch.on .toggle-knob { left: 19px; }
+
+  /* ── API Config Form ── */
+  .api-config {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .api-config-header {
+    background: var(--surface-2);
+    padding: 10px 16px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .api-config-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+
+  .form-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .form-input {
+    padding: 9px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-xs);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-primary);
+    background: var(--surface);
+    transition: border-color 0.18s;
+    outline: none;
+    width: 100%;
+  }
+
+  .form-input:focus { border-color: var(--accent-blue); }
+  .form-input::placeholder { color: var(--text-muted); font-family: 'Noto Sans SC', sans-serif; }
+
+  .input-with-btn {
+    display: flex;
+    gap: 8px;
+  }
+
+  .input-with-btn .form-input { flex: 1; }
+
+  .btn-detect {
+    padding: 9px 14px;
+    border-radius: var(--radius-xs);
+    border: 1.5px solid var(--accent-green);
+    background: var(--accent-green-light);
+    color: var(--accent-green);
+    font-weight: 600;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.18s;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .btn-detect:hover { background: var(--accent-green); color: white; }
+
+  /* ── Model List ── */
+  .model-section {
+    margin-top: 4px;
+  }
+
+  .model-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .model-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .btn-add {
+    padding: 5px 12px;
+    border-radius: var(--radius-xs);
+    border: 1.5px dashed var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.18s;
+    display: flex; align-items: center; gap: 4px;
+  }
+
+  .btn-add:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+  .model-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .model-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    background: var(--surface-2);
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--border);
+  }
+
+  .model-icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+  }
+
+  .model-name { font-weight: 500; font-size: 13px; flex: 1; font-family: 'JetBrains Mono', monospace; }
+
+  .model-actions { display: flex; align-items: center; gap: 6px; }
+
+  .icon-btn {
+    width: 26px; height: 26px;
+    border-radius: 5px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    transition: all 0.15s;
+    color: var(--text-muted);
+  }
+
+  .icon-btn:hover { background: var(--border); color: var(--text-primary); }
+  .icon-btn.danger:hover { background: #fee2e2; color: var(--accent-red); }
+
+  /* ── Auth Modal ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+
+  .modal-overlay.show { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 16px;
+    width: 380px;
+    max-width: 90vw;
+    box-shadow: var(--shadow-lg);
+    transform: scale(0.95) translateY(8px);
+    transition: transform 0.25s;
+    overflow: hidden;
+  }
+
+  .modal-overlay.show .modal { transform: scale(1) translateY(0); }
+
+  .modal-header {
+    padding: 22px 24px 18px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-logo {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    margin: 0 auto 14px;
+    color: white;
+  }
+
+  .modal-title { font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+  .modal-desc { font-size: 13px; color: var(--text-muted); }
+
+  .modal-body { padding: 22px 24px; }
+
+  .auth-tabs {
+    display: flex;
+    border-radius: var(--radius-xs);
+    background: var(--bg);
+    padding: 3px;
+    margin-bottom: 20px;
+  }
+
+  .auth-tab {
+    flex: 1;
+    padding: 7px;
+    border-radius: 5px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border: none;
+    background: none;
+    font-family: inherit;
+    transition: all 0.18s;
+  }
+
+  .auth-tab.active { background: var(--surface); color: var(--text-primary); font-weight: 600; box-shadow: var(--shadow-sm); }
+
+  .modal-form { display: flex; flex-direction: column; gap: 12px; }
+
+  .modal-input {
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-xs);
+    font-size: 13.5px;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: var(--surface);
+    outline: none;
+    transition: border-color 0.18s;
+    width: 100%;
+  }
+
+  .modal-input:focus { border-color: var(--accent-blue); }
+  .modal-input::placeholder { color: var(--text-muted); }
+
+  .modal-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .modal-divider::before, .modal-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .btn-full {
+    width: 100%;
+    padding: 11px;
+    border-radius: var(--radius-xs);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+
+  .btn-login-primary {
+    border: none;
+    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    color: white;
+  }
+
+  .btn-login-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(99,102,241,0.3); }
+
+  .btn-guest {
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+  }
+
+  .btn-guest:hover { border-color: #94a3b8; }
+
+  .modal-footer {
+    padding: 14px 24px 20px;
+    text-align: center;
+  }
+
+  .modal-link { font-size: 12.5px; color: var(--text-muted); }
+  .modal-link a { color: var(--accent-blue); text-decoration: none; font-weight: 500; }
+
+  /* ── Payment Modal ── */
+  .pay-modal-body { padding: 22px 24px; }
+
+  .pay-summary {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .pay-summary-label { font-size: 13px; color: var(--text-secondary); }
+  .pay-summary-value { font-weight: 700; font-size: 16px; font-family: 'JetBrains Mono', monospace; }
+  .pay-summary-price { color: var(--accent-blue); font-size: 20px; font-weight: 700; }
+
+  .pay-qr-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+  }
+
+  .pay-qr-box {
+    width: 140px; height: 140px;
+    background: var(--surface-2);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+
+  .pay-qr-hint { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+
+  .pay-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .pay-tab {
+    flex: 1;
+    padding: 9px;
+    border-radius: var(--radius-xs);
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: all 0.18s;
+  }
+
+  .pay-tab.active { border-color: var(--accent-blue); background: var(--accent-blue-light); color: var(--accent-blue); }
+
+  .close-btn {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    transition: all 0.18s;
+  }
+
+  .close-btn:hover { background: #e2e8f0; color: var(--text-primary); }
+
+  /* ── Usage Stats ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 16px 22px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+
+  .stat-item { text-align: center; }
+  .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; color: var(--text-primary); }
+  .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ── SVG QR Placeholder ── */
+  .qr-svg { width: 90px; height: 90px; }
+
+  /* Animations */
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+    70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+
+  .status-dot { animation: pulse-ring 2s infinite; }
+
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+
+  .qr-loading {
+    background: linear-gradient(90deg, var(--border) 25%, #e8edf2 50%, var(--border) 75%);
+    background-size: 200% auto;
+    animation: shimmer 1.5s linear infinite;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Nav -->
+<nav class="top-nav">
+  <div class="logo">
+    <div class="logo-icon">🔬</div>
+    MedAI
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active">模型服务</button>
+    <button class="nav-tab">患者信息</button>
+    <button class="nav-tab">检查项目</button>
+    <button class="nav-tab">数据管理</button>
+  </div>
+  <div class="nav-right">
+    <button class="btn-secondary" onclick="showAuthModal()">登录 / 注册</button>
+    <div class="user-avatar" title="临时用户">访</div>
+  </div>
+</nav>
+
+<!-- Main Content -->
+<div class="main">
+
+  <!-- Left Panel -->
+  <div class="left-panel">
+
+    <!-- User Info Card -->
+    <div class="user-card">
+      <div class="user-card-header">
+        <div class="user-avatar-lg">访</div>
+        <div>
+          <div class="user-name">临时访客</div>
+          <div class="user-status">
+            <div class="status-dot"></div>
+            未登录
+          </div>
+        </div>
+      </div>
+
+      <div class="quota-section">
+        <div class="quota-label">
+          <span>剩余调用次数</span>
+          <span class="quota-count">7 / 20</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: 35%"></div>
+        </div>
+      </div>
+
+      <button class="btn-recharge" onclick="showPayModal()">
+        ⚡ 购买次数包
+      </button>
+    </div>
+
+    <!-- Mode Switch Card -->
+    <div class="mode-card">
+      <div class="mode-card-title">使用模式</div>
+      <div class="mode-options">
+        <div class="mode-option active" id="generalModeBtn" onclick="switchMode('general')">
+          <div class="mode-icon">☁️</div>
+          <div>
+            <div class="mode-label">通用模式</div>
+            <div class="mode-desc">系统内置接口</div>
+          </div>
+          <div class="mode-radio"></div>
+        </div>
+        <div class="mode-option" id="customModeBtn" onclick="switchMode('custom')">
+          <div class="mode-icon">🔧</div>
+          <div>
+            <div class="mode-label">自定义模式</div>
+            <div class="mode-desc">自有 API 接口</div>
+          </div>
+          <div class="mode-radio"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Usage Stats Mini -->
+    <div class="panel-card">
+      <div style="padding: 14px 18px;">
+        <div style="font-size: 11.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 12px;">今日使用</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12.5px;">
+            <span style="color: var(--text-secondary);">🔍 OCR 识别</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--text-primary);">3 次</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12.5px;">
+            <span style="color: var(--text-secondary);">📊 AI 分析</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--text-primary);">2 次</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12.5px;">
+            <span style="color: var(--text-secondary);">💬 AI 问答</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--text-primary);">2 次</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Panel -->
+  <div class="right-panel">
+
+    <!-- General Mode Panel -->
+    <div class="panel-card" id="generalModePanel">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-icon" style="background: var(--accent-blue-light); font-size: 18px;">☁️</div>
+          <div>
+            <div class="panel-title">通用模式</div>
+            <div class="panel-subtitle">系统内置 AI 接口，按次付费，无需配置</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span class="badge badge-green">● 服务正常</span>
+          <span class="badge badge-blue">当前使用</span>
+        </div>
+      </div>
+
+      <div class="general-mode-active">
+
+        <!-- Pricing Cards -->
+        <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px;">选择套餐</div>
+        <div class="pricing-grid">
+          <div class="pricing-card" onclick="selectPlan(this, '9.9')">
+            <div class="pricing-calls">20</div>
+            <div class="pricing-calls-label">次调用</div>
+            <div class="pricing-price">¥9.9<span class="pricing-price-unit"></span></div>
+            <div class="pricing-per">¥0.50 / 次</div>
+          </div>
+          <div class="pricing-card recommended" onclick="selectPlan(this, '29.9')">
+            <div class="pricing-badge">推荐</div>
+            <div class="pricing-calls">100</div>
+            <div class="pricing-calls-label">次调用</div>
+            <div class="pricing-price">¥29.9</div>
+            <div class="pricing-per">¥0.30 / 次</div>
+          </div>
+          <div class="pricing-card" onclick="selectPlan(this, '79.9')">
+            <div class="pricing-calls">500</div>
+            <div class="pricing-calls-label">次调用</div>
+            <div class="pricing-price">¥79.9</div>
+            <div class="pricing-per">¥0.16 / 次</div>
+          </div>
+        </div>
+
+        <!-- Payment Section -->
+        <div class="payment-section">
+          <div class="payment-tabs">
+            <button class="payment-tab active" id="wechatTab" onclick="switchPayTab('wechat')">
+              <span>💚</span> 微信支付
+            </button>
+            <button class="payment-tab" id="alipayTab" onclick="switchPayTab('alipay')">
+              <span>💙</span> 支付宝
+            </button>
+          </div>
+          <div class="payment-content">
+            <div class="qr-wrapper">
+              <!-- SVG QR code placeholder -->
+              <svg class="qr-svg" viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Corner markers -->
+                <rect x="5" y="5" width="25" height="25" rx="3" fill="none" stroke="#1a202c" stroke-width="3"/>
+                <rect x="9" y="9" width="13" height="13" rx="1" fill="#1a202c"/>
+                <rect x="60" y="5" width="25" height="25" rx="3" fill="none" stroke="#1a202c" stroke-width="3"/>
+                <rect x="64" y="9" width="13" height="13" rx="1" fill="#1a202c"/>
+                <rect x="5" y="60" width="25" height="25" rx="3" fill="none" stroke="#1a202c" stroke-width="3"/>
+                <rect x="9" y="64" width="13" height="13" rx="1" fill="#1a202c"/>
+                <!-- Data modules (random-looking) -->
+                <rect x="35" y="5" width="5" height="5" fill="#1a202c"/>
+                <rect x="43" y="5" width="5" height="5" fill="#1a202c"/>
+                <rect x="51" y="5" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="13" width="5" height="5" fill="#1a202c"/>
+                <rect x="47" y="13" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="21" width="5" height="5" fill="#1a202c"/>
+                <rect x="43" y="21" width="5" height="5" fill="#1a202c"/>
+                <rect x="51" y="21" width="5" height="5" fill="#1a202c"/>
+                <rect x="5" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="13" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="21" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="43" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="55" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="63" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="71" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="79" y="35" width="5" height="5" fill="#1a202c"/>
+                <rect x="5" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="17" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="29" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="39" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="51" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="63" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="75" y="43" width="5" height="5" fill="#1a202c"/>
+                <rect x="5" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="13" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="25" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="47" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="59" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="71" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="79" y="51" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="63" width="5" height="5" fill="#1a202c"/>
+                <rect x="43" y="63" width="5" height="5" fill="#1a202c"/>
+                <rect x="55" y="63" width="5" height="5" fill="#1a202c"/>
+                <rect x="67" y="63" width="5" height="5" fill="#1a202c"/>
+                <rect x="79" y="63" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="71" width="5" height="5" fill="#1a202c"/>
+                <rect x="47" y="71" width="5" height="5" fill="#1a202c"/>
+                <rect x="59" y="71" width="5" height="5" fill="#1a202c"/>
+                <rect x="71" y="71" width="5" height="5" fill="#1a202c"/>
+                <rect x="35" y="79" width="5" height="5" fill="#1a202c"/>
+                <rect x="43" y="79" width="5" height="5" fill="#1a202c"/>
+                <rect x="51" y="79" width="5" height="5" fill="#1a202c"/>
+                <rect x="63" y="79" width="5" height="5" fill="#1a202c"/>
+                <rect x="75" y="79" width="5" height="5" fill="#1a202c"/>
+              </svg>
+            </div>
+
+            <div class="qr-instructions">
+              <div class="qr-title">扫码完成支付</div>
+              <ul class="qr-steps">
+                <li class="qr-step">
+                  <div class="step-num">1</div>
+                  <span>打开微信 → 扫一扫</span>
+                </li>
+                <li class="qr-step">
+                  <div class="step-num">2</div>
+                  <span>扫描左侧二维码</span>
+                </li>
+                <li class="qr-step">
+                  <div class="step-num">3</div>
+                  <span>确认支付 <strong>¥29.9</strong>，获得 100 次调用</span>
+                </li>
+                <li class="qr-step">
+                  <div class="step-num">4</div>
+                  <span>支付成功后自动到账，无需刷新</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Free Trial Banner -->
+        <div class="free-trial-banner">
+          <div class="free-trial-icon">🎁</div>
+          <div class="free-trial-text">
+            <strong>注册即送免费试用！</strong> 新用户注册后赠送 1 次免费体验，包含 OCR 识别、AI 分析和问答全流程。
+            <a href="#" onclick="showAuthModal()" style="color: #059669; font-weight: 600; text-decoration: none; margin-left: 4px;">立即注册 →</a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Stats Bar -->
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-value" style="color: var(--accent-blue)">99.9%</div>
+          <div class="stat-label">服务可用率</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" style="color: var(--accent-green)">~1.2s</div>
+          <div class="stat-label">平均响应</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" style="color: var(--accent-amber)">GPT-5</div>
+          <div class="stat-label">底层模型</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Mode Panel -->
+    <div class="panel-card" id="customModePanel" style="opacity: 0.5; pointer-events: none; position: relative;">
+      <div style="position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.7); border-radius: var(--radius);">
+        <div style="text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 28px; box-shadow: var(--shadow-md);">
+          <div style="font-size: 24px; margin-bottom: 8px;">🔧</div>
+          <div style="font-weight: 600; margin-bottom: 4px;">自定义模式未启用</div>
+          <div style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 12px;">切换到「自定义模式」后可配置您自己的 API</div>
+          <button class="btn-primary" onclick="switchMode('custom')" style="font-size: 12.5px; padding: 7px 16px;">切换到自定义模式</button>
+        </div>
+      </div>
+
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-icon" style="background: var(--accent-purple-light); font-size: 18px;">🔧</div>
+          <div>
+            <div class="panel-title">自定义模式</div>
+            <div class="panel-subtitle">使用您自己的 AI API 接口，无调用次数限制</div>
+          </div>
+        </div>
+        <span class="badge badge-purple">高级</span>
+      </div>
+
+      <div class="custom-mode-panel">
+        <div class="provider-list">
+          <div class="provider-item active">
+            <div class="provider-logo" style="color: #10a37f; font-size: 13px; font-weight: 900;">O</div>
+            <div>
+              <div class="provider-name">OPENAI</div>
+              <div class="provider-meta">2 个模型 · 已启用</div>
+            </div>
+            <div class="toggle-switch on"><div class="toggle-knob"></div></div>
+          </div>
+        </div>
+
+        <div class="api-config">
+          <div class="api-config-header">
+            ⚙️ OPENAI 接口配置
+          </div>
+          <div class="api-config-body">
+            <div class="form-group">
+              <label class="form-label">🔑 API 密钥</label>
+              <div class="input-with-btn">
+                <input class="form-input" type="password" placeholder="sk-..." value="sk-••••••••••••••••">
+                <button class="btn-detect">🔗 检测</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">🌐 API 地址</label>
+              <input class="form-input" type="text" value="https://api.openai.com/v1/chat/completions">
+            </div>
+          </div>
+        </div>
+
+        <div class="model-section" style="margin-top: 16px;">
+          <div class="model-section-header">
+            <div class="model-section-title">
+              🤖 模型列表
+              <span class="badge badge-blue">2</span>
+            </div>
+            <button class="btn-add">＋ 添加模型</button>
+          </div>
+          <div class="model-list">
+            <div class="model-item">
+              <div class="model-icon">🤖</div>
+              <div class="model-name">gpt-5.3-codex</div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="badge badge-blue" style="font-size: 10.5px; padding: 2px 7px;">默认</span>
+                <div class="model-actions">
+                  <button class="icon-btn" title="设置">⚙️</button>
+                  <button class="icon-btn danger" title="删除">🗑️</button>
+                </div>
+              </div>
+            </div>
+            <div class="model-item">
+              <div class="model-icon">🤖</div>
+              <div class="model-name">gpt-5.4</div>
+              <div class="model-actions">
+                <button class="icon-btn" title="设置为默认">⭐</button>
+                <button class="icon-btn" title="设置">⚙️</button>
+                <button class="icon-btn danger" title="删除">🗑️</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
+          <button class="btn-secondary">取消</button>
+          <button class="btn-primary">💾 保存配置</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ── Auth Modal ── -->
+<div class="modal-overlay" id="authModal">
+  <div class="modal">
+    <button class="close-btn" onclick="hideAuthModal()">×</button>
+    <div class="modal-header">
+      <div class="modal-logo">🔬</div>
+      <div class="modal-title">欢迎使用 MedAI</div>
+      <div class="modal-desc">登录后享受更多权益，注册即送免费试用次数</div>
+    </div>
+    <div class="modal-body">
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="switchAuthTab('login', this)">登录</button>
+        <button class="auth-tab" onclick="switchAuthTab('register', this)">注册</button>
+        <button class="auth-tab" onclick="switchAuthTab('guest', this)">临时使用</button>
+      </div>
+
+      <div id="loginForm" class="modal-form">
+        <input class="modal-input" type="text" placeholder="手机号 / 邮箱">
+        <input class="modal-input" type="password" placeholder="密码">
+        <button class="btn-full btn-login-primary">登 录</button>
+        <div class="modal-divider">或</div>
+        <button class="btn-full btn-guest" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+          📱 手机验证码登录
+        </button>
+      </div>
+
+      <div id="registerForm" class="modal-form" style="display: none;">
+        <input class="modal-input" type="text" placeholder="手机号">
+        <div style="display: flex; gap: 8px;">
+          <input class="modal-input" type="text" placeholder="验证码" style="flex:1">
+          <button class="btn-detect" style="white-space: nowrap;">发送验证码</button>
+        </div>
+        <input class="modal-input" type="password" placeholder="设置密码（至少8位）">
+        <div style="background: var(--accent-green-light); border: 1px solid #6ee7b7; border-radius: var(--radius-xs); padding: 10px 14px; font-size: 12.5px; color: #065f46; display: flex; align-items: center; gap: 8px;">
+          🎁 注册成功后，系统将赠送 <strong>1次</strong> 免费 AI 调用体验！
+        </div>
+        <button class="btn-full btn-login-primary">注 册</button>
+      </div>
+
+      <div id="guestForm" class="modal-form" style="display: none;">
+        <div style="background: var(--accent-amber-light); border: 1px solid #fcd34d; border-radius: var(--radius-xs); padding: 14px; text-align: center;">
+          <div style="font-size: 22px; margin-bottom: 8px;">👤</div>
+          <div style="font-weight: 600; margin-bottom: 6px; font-size: 14px;">以临时访客身份使用</div>
+          <div style="font-size: 12.5px; color: #92400e; line-height: 1.6;">
+            临时用户可扫码按次购买使用，数据不保存。<br>
+            注册账号可享受历史记录、更多权益。
+          </div>
+        </div>
+        <button class="btn-full btn-login-primary" onclick="hideAuthModal()">继续以访客使用</button>
+        <button class="btn-full btn-guest" onclick="switchAuthTab('register', document.querySelectorAll('.auth-tab')[1])">立即注册享更多权益</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-link">继续使用即表示同意 <a href="#">服务条款</a> 和 <a href="#">隐私政策</a></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Pay Modal ── -->
+<div class="modal-overlay" id="payModal">
+  <div class="modal">
+    <button class="close-btn" onclick="hidePayModal()">×</button>
+    <div class="modal-header">
+      <div class="modal-logo" style="background: linear-gradient(135deg, #10b981, #3b82f6);">⚡</div>
+      <div class="modal-title">购买调用次数包</div>
+      <div class="modal-desc">支付完成后，次数立即到账</div>
+    </div>
+    <div class="pay-modal-body">
+
+      <div class="pay-summary">
+        <div>
+          <div class="pay-summary-label">已选套餐</div>
+          <div style="font-weight: 600; font-size: 14px; margin-top: 2px;">100 次调用包</div>
+        </div>
+        <div style="text-align: right;">
+          <div class="pay-summary-label">应付金额</div>
+          <div class="pay-summary-price">¥29.9</div>
+        </div>
+      </div>
+
+      <div class="pay-tabs">
+        <button class="pay-tab active" onclick="switchPayModalTab(this)">
+          <span>💚</span> 微信支付
+        </button>
+        <button class="pay-tab" onclick="switchPayModalTab(this)">
+          <span>💙</span> 支付宝
+        </button>
+      </div>
+
+      <div class="pay-qr-area">
+        <div class="pay-qr-box">
+          <svg width="110" height="110" viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="5" y="5" width="25" height="25" rx="3" fill="none" stroke="#1a202c" stroke-width="3"/>
+            <rect x="9" y="9" width="13" height="13" rx="1" fill="#1a202c"/>
+            <rect x="60" y="5" width="25" height="25" rx="3" fill="none" stroke="#1a202c" stroke-width="3"/>
+            <rect x="64" y="9" width="13" height="13" rx="1" fill="#1a202c"/>
+            <rect x="5" y="60" width="25" height="25" rx="3" fill="none" stroke="#1a202c" stroke-width="3"/>
+            <rect x="9" y="64" width="13" height="13" rx="1" fill="#1a202c"/>
+            <rect x="35" y="5" width="5" height="5" fill="#1a202c"/>
+            <rect x="43" y="5" width="5" height="5" fill="#1a202c"/>
+            <rect x="51" y="5" width="5" height="5" fill="#1a202c"/>
+            <rect x="35" y="13" width="5" height="5" fill="#1a202c"/>
+            <rect x="51" y="13" width="5" height="5" fill="#1a202c"/>
+            <rect x="43" y="21" width="5" height="5" fill="#1a202c"/>
+            <rect x="5" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="17" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="35" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="47" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="59" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="71" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="79" y="35" width="5" height="5" fill="#1a202c"/>
+            <rect x="5" y="43" width="5" height="5" fill="#1a202c"/>
+            <rect x="21" y="43" width="5" height="5" fill="#1a202c"/>
+            <rect x="37" y="43" width="5" height="5" fill="#1a202c"/>
+            <rect x="53" y="43" width="5" height="5" fill="#1a202c"/>
+            <rect x="69" y="43" width="5" height="5" fill="#1a202c"/>
+            <rect x="79" y="43" width="5" height="5" fill="#1a202c"/>
+            <rect x="5" y="51" width="5" height="5" fill="#1a202c"/>
+            <rect x="13" y="51" width="5" height="5" fill="#1a202c"/>
+            <rect x="29" y="51" width="5" height="5" fill="#1a202c"/>
+            <rect x="45" y="51" width="5" height="5" fill="#1a202c"/>
+            <rect x="61" y="51" width="5" height="5" fill="#1a202c"/>
+            <rect x="75" y="51" width="5" height="5" fill="#1a202c"/>
+            <rect x="35" y="63" width="5" height="5" fill="#1a202c"/>
+            <rect x="47" y="63" width="5" height="5" fill="#1a202c"/>
+            <rect x="63" y="63" width="5" height="5" fill="#1a202c"/>
+            <rect x="79" y="63" width="5" height="5" fill="#1a202c"/>
+            <rect x="35" y="71" width="5" height="5" fill="#1a202c"/>
+            <rect x="55" y="71" width="5" height="5" fill="#1a202c"/>
+            <rect x="71" y="71" width="5" height="5" fill="#1a202c"/>
+            <rect x="39" y="79" width="5" height="5" fill="#1a202c"/>
+            <rect x="51" y="79" width="5" height="5" fill="#1a202c"/>
+            <rect x="67" y="79" width="5" height="5" fill="#1a202c"/>
+            <rect x="79" y="79" width="5" height="5" fill="#1a202c"/>
+          </svg>
+        </div>
+        <div class="pay-qr-hint">📱 打开微信 → 扫一扫 → 确认支付</div>
+        <div style="font-size: 11.5px; color: var(--text-muted);">二维码有效期 5 分钟 · 支付后自动跳转</div>
+      </div>
+
+      <div style="background: var(--surface-2); border-radius: var(--radius-xs); padding: 10px 14px; font-size: 12px; color: var(--text-muted); line-height: 1.7;">
+        🔒 本次支付由第三方支付平台处理，安全加密。如有问题请联系客服。
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  let currentMode = 'general';
+  let currentPayTab = 'wechat';
+
+  function switchMode(mode) {
+    currentMode = mode;
+    const generalBtn = document.getElementById('generalModeBtn');
+    const customBtn = document.getElementById('customModeBtn');
+    const generalPanel = document.getElementById('generalModePanel');
+    const customPanel = document.getElementById('customModePanel');
+
+    if (mode === 'general') {
+      generalBtn.className = 'mode-option active';
+      customBtn.className = 'mode-option';
+      generalPanel.style.opacity = '1';
+      generalPanel.style.pointerEvents = 'all';
+      customPanel.style.opacity = '0.5';
+      customPanel.style.pointerEvents = 'none';
+    } else {
+      generalBtn.className = 'mode-option';
+      customBtn.className = 'mode-option active green';
+      customPanel.style.opacity = '1';
+      customPanel.style.pointerEvents = 'all';
+      generalPanel.style.opacity = '0.5';
+      generalPanel.style.pointerEvents = 'none';
+    }
+  }
+
+  function selectPlan(el, price) {
+    document.querySelectorAll('.pricing-card').forEach(c => c.classList.remove('recommended'));
+    el.classList.add('recommended');
+    // Update step 3 text
+    const steps = document.querySelectorAll('.qr-step');
+    const calls = el.querySelector('.pricing-calls').textContent;
+    steps[2].querySelector('span').innerHTML = `确认支付 <strong>¥${price}</strong>，获得 ${calls} 次调用`;
+  }
+
+  function switchPayTab(tab) {
+    document.getElementById('wechatTab').className = 'payment-tab' + (tab === 'wechat' ? ' active' : '');
+    document.getElementById('alipayTab').className = 'payment-tab' + (tab === 'alipay' ? ' active' : '');
+  }
+
+  function switchPayModalTab(el) {
+    document.querySelectorAll('.pay-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function showAuthModal() {
+    document.getElementById('authModal').classList.add('show');
+  }
+
+  function hideAuthModal() {
+    document.getElementById('authModal').classList.remove('show');
+  }
+
+  function showPayModal() {
+    document.getElementById('payModal').classList.add('show');
+  }
+
+  function hidePayModal() {
+    document.getElementById('payModal').classList.remove('show');
+  }
+
+  function switchAuthTab(tab, btn) {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('loginForm').style.display = tab === 'login' ? 'flex' : 'none';
+    document.getElementById('registerForm').style.display = tab === 'register' ? 'flex' : 'none';
+    document.getElementById('guestForm').style.display = tab === 'guest' ? 'flex' : 'none';
+  }
+
+  // Close modals on overlay click
+  document.getElementById('authModal').addEventListener('click', function(e) {
+    if (e.target === this) hideAuthModal();
+  });
+  document.getElementById('payModal').addEventListener('click', function(e) {
+    if (e.target === this) hidePayModal();
+  });
+</script>
+</body>
+</html>

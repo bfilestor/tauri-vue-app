@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>健康管家 - 侧边栏用户区设计</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: #e8edf5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 40px;
+  flex-wrap: wrap;
+  padding: 40px 20px;
+}
+
+h2 {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+  margin-bottom: 12px;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+/* ─── App Shell ─── */
+.app-window {
+  width: 248px;
+  height: 580px;
+  background: #f0f5fb;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Title bar */
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: #f0f5fb;
+}
+
+.app-icon {
+  width: 30px; height: 30px;
+  background: linear-gradient(135deg, #2196f3, #1565c0);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 14px;
+}
+
+.app-title { font-weight: 700; font-size: 15px; color: #1a2744; }
+
+/* Nav items */
+.nav-list {
+  flex: 1;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.nav-item:hover { background: rgba(33,150,243,0.07); color: #2196f3; }
+.nav-item.active { background: rgba(33,150,243,0.12); color: #1a6ecc; font-weight: 600; }
+.nav-item-icon { font-size: 15px; width: 20px; text-align: center; }
+
+/* Divider */
+.sidebar-divider {
+  height: 1px;
+  background: #dce5f0;
+  margin: 4px 10px;
+}
+
+/* ─── VARIANT A: Collapsed / Guest ─── */
+.user-zone-a {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-zone-a .login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #2196f3, #1976d2);
+  color: white;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 3px 10px rgba(33,150,243,0.3);
+  letter-spacing: 0.2px;
+}
+
+.user-zone-a .login-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(33,150,243,0.38);
+}
+
+.user-zone-a .register-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px;
+  border-radius: 10px;
+  border: 1.5px solid #d0daea;
+  background: white;
+  color: #2196f3;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.user-zone-a .register-btn:hover {
+  border-color: #2196f3;
+  background: #eff6ff;
+}
+
+.user-zone-a .guest-hint {
+  text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
+  padding: 2px 0 4px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+
+/* ─── VARIANT B: Logged In (Compact) ─── */
+.user-zone-b {
+  padding: 10px;
+}
+
+.user-card-b {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: white;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1.5px solid transparent;
+  position: relative;
+}
+
+.user-card-b:hover {
+  border-color: #d0daea;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+
+.avatar-b {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2196f3, #00bcd4);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 14px; font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(33,150,243,0.3);
+}
+
+.user-info-b { flex: 1; min-width: 0; }
+.user-name-b { font-weight: 600; font-size: 13px; color: #1a2744; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-sub-b { font-size: 11px; color: #94a3b8; margin-top: 1px; display: flex; align-items: center; gap: 3px; }
+.online-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
+
+.menu-arrow {
+  color: #bcc8d8;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.quota-bar-b {
+  margin-top: 8px;
+  padding: 0 2px;
+}
+
+.quota-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.quota-label-b { font-size: 11px; color: #94a3b8; }
+.quota-val-b { font-size: 11px; font-weight: 600; color: #2196f3; }
+
+.bar-track {
+  height: 4px;
+  background: #e2eaf4;
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, #2196f3, #00bcd4);
+  width: 35%;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quick-btn {
+  flex: 1;
+  padding: 7px 4px;
+  border-radius: 8px;
+  border: 1px solid #dce5f0;
+  background: white;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-weight: 500;
+}
+
+.quick-btn:hover { border-color: #2196f3; color: #2196f3; background: #eff6ff; }
+.quick-btn.danger:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+
+/* ─── VARIANT C: Popup Menu on Hover ─── */
+.user-zone-c {
+  padding: 10px;
+  position: relative;
+}
+
+.user-card-c {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: white;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1.5px solid #dce5f0;
+  transition: all 0.2s;
+}
+
+.user-card-c:hover { border-color: #2196f3; box-shadow: 0 2px 10px rgba(33,150,243,0.12); }
+
+.avatar-c {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 13px; font-weight: 700;
+  flex-shrink: 0;
+}
+
+.user-name-c { font-weight: 600; font-size: 13px; color: #1a2744; flex: 1; }
+.user-role-c { font-size: 10.5px; color: #94a3b8; margin-top: 1px; }
+
+.popup-menu {
+  position: absolute;
+  bottom: calc(100% - 10px);
+  left: 10px; right: 10px;
+  background: white;
+  border-radius: 12px;
+  border: 1.5px solid #e2e8f0;
+  box-shadow: 0 -8px 30px rgba(0,0,0,0.1), 0 -2px 8px rgba(0,0,0,0.05);
+  padding: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 20;
+}
+
+.user-zone-c:hover .popup-menu { display: flex; }
+
+.popup-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #475569;
+  transition: all 0.15s;
+}
+
+.popup-item:hover { background: #f1f5f9; color: #1a2744; }
+.popup-item.danger:hover { background: #fef2f2; color: #ef4444; }
+.popup-item-icon { font-size: 14px; width: 18px; text-align: center; }
+
+.popup-divider { height: 1px; background: #f1f5f9; margin: 3px 0; }
+
+.popup-user-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 4px;
+}
+
+.popup-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 15px; font-weight: 700;
+}
+
+.popup-name { font-weight: 700; font-size: 13.5px; color: #1a2744; }
+.popup-email { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+
+.badge-vip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: white;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* ─── VARIANT D: Minimal Icon + Tooltip ─── */
+.user-zone-d {
+  padding: 10px;
+}
+
+.user-row-d {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1.5px solid transparent;
+}
+
+.user-row-d:hover { background: rgba(33,150,243,0.06); border-color: #dce5f0; }
+
+.avatar-d {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #059669);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 12px; font-weight: 700;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.online-badge {
+  position: absolute;
+  bottom: -1px; right: -1px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 2px solid #f0f5fb;
+}
+
+.user-text-d { flex: 1; min-width: 0; }
+.user-name-d { font-size: 13px; font-weight: 600; color: #1a2744; }
+.user-desc-d { font-size: 10.5px; color: #94a3b8; margin-top: 1px; }
+
+.icon-btn-d {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  color: #94a3b8;
+  transition: all 0.15s;
+}
+
+.icon-btn-d:hover { background: #e2eaf4; color: #475569; }
+
+.logout-row-d {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+  margin-top: 2px;
+}
+
+.logout-row-d:hover { background: #fef2f2; }
+
+/* ─── Panel Label ─── */
+.panel-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #94a3b8;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+/* ─── Auth Modal ─── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,0.5);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+
+.modal-overlay.show { opacity: 1; pointer-events: all; }
+
+.modal {
+  background: white;
+  border-radius: 18px;
+  width: 360px;
+  max-width: 92vw;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.18);
+  transform: scale(0.95) translateY(10px);
+  transition: transform 0.25s;
+  overflow: hidden;
+}
+
+.modal-overlay.show .modal { transform: scale(1) translateY(0); }
+
+.modal-top {
+  background: linear-gradient(135deg, #1565c0, #2196f3);
+  padding: 28px 28px 22px;
+  text-align: center;
+  color: white;
+  position: relative;
+}
+
+.modal-app-icon {
+  width: 52px; height: 52px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  margin: 0 auto 12px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.25);
+}
+
+.modal-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.modal-subtitle { font-size: 13px; opacity: 0.8; }
+
+.modal-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.2);
+  color: white;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  transition: background 0.15s;
+}
+
+.modal-close:hover { background: rgba(255,255,255,0.3); }
+
+.modal-body { padding: 24px 28px 28px; }
+
+.tab-row {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 20px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 8px;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.tab-btn.active {
+  background: white;
+  color: #1a2744;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.form { display: flex; flex-direction: column; gap: 12px; }
+
+.input-wrap { position: relative; }
+
+.modal-input {
+  width: 100%;
+  padding: 11px 14px 11px 38px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: #1a2744;
+  outline: none;
+  transition: border-color 0.18s;
+  background: #fafbfc;
+}
+
+.modal-input:focus { border-color: #2196f3; background: white; }
+.modal-input::placeholder { color: #bcc8d8; }
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: #bcc8d8;
+  pointer-events: none;
+}
+
+.code-row {
+  display: flex;
+  gap: 8px;
+}
+
+.code-row .modal-input { flex: 1; }
+
+.send-code-btn {
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #2196f3;
+  background: #eff6ff;
+  color: #2196f3;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.send-code-btn:hover { background: #2196f3; color: white; }
+
+.gift-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: #065f46;
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #2196f3, #1565c0);
+  color: white;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(33,150,243,0.3);
+  letter-spacing: 0.3px;
+}
+
+.submit-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(33,150,243,0.38); }
+
+.divider-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.divider-or::before, .divider-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #f1f5f9;
+}
+
+.guest-btn {
+  width: 100%;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: white;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+
+.guest-btn:hover { border-color: #94a3b8; color: #1a2744; }
+
+.modal-footer-note {
+  text-align: center;
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin-top: 14px;
+}
+
+.modal-footer-note a { color: #2196f3; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- ====== VARIANT A: Not logged in ====== -->
+<div>
+  <div class="panel-label">方案 A · 未登录</div>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="app-icon">🛡️</div>
+      <span class="app-title">健康管家</span>
+    </div>
+    <div class="nav-list">
+      <div class="nav-item"><span class="nav-item-icon">☁️</span> 数据上传</div>
+      <div class="nav-item"><span class="nav-item-icon">🔏</span> 数据脱敏</div>
+      <div class="nav-item"><span class="nav-item-icon">📈</span> 趋势分析</div>
+      <div class="nav-item"><span class="nav-item-icon">🕐</span> 历史记录</div>
+      <div class="nav-item"><span class="nav-item-icon">💬</span> AI 问答</div>
+      <div class="nav-item active"><span class="nav-item-icon">⚙️</span> 系统设置</div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <!-- USER ZONE A -->
+    <div class="user-zone-a">
+      <button class="login-btn" onclick="showModal()">
+        👤 登录账号
+      </button>
+      <button class="register-btn">
+        ✨ 免费注册
+      </button>
+      <div class="guest-hint">🔒 注册即送免费试用</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== VARIANT B: Logged in - with quota ====== -->
+<div>
+  <div class="panel-label">方案 B · 已登录展开</div>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="app-icon">🛡️</div>
+      <span class="app-title">健康管家</span>
+    </div>
+    <div class="nav-list">
+      <div class="nav-item"><span class="nav-item-icon">☁️</span> 数据上传</div>
+      <div class="nav-item"><span class="nav-item-icon">🔏</span> 数据脱敏</div>
+      <div class="nav-item"><span class="nav-item-icon">📈</span> 趋势分析</div>
+      <div class="nav-item"><span class="nav-item-icon">🕐</span> 历史记录</div>
+      <div class="nav-item"><span class="nav-item-icon">💬</span> AI 问答</div>
+      <div class="nav-item active"><span class="nav-item-icon">⚙️</span> 系统设置</div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <!-- USER ZONE B -->
+    <div class="user-zone-b">
+      <div class="user-card-b">
+        <div class="avatar-b">健</div>
+        <div class="user-info-b">
+          <div class="user-name-b">健康用户</div>
+          <div class="user-sub-b">
+            <div class="online-dot"></div>
+            本地管理
+          </div>
+        </div>
+        <div class="menu-arrow">›</div>
+      </div>
+      <div class="quota-bar-b">
+        <div class="quota-row">
+          <span class="quota-label-b">剩余次数</span>
+          <span class="quota-val-b">7 / 20 次</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill"></div></div>
+      </div>
+      <div class="quick-actions">
+        <button class="quick-btn">⚡ 购买次数</button>
+        <button class="quick-btn">👤 账号设置</button>
+        <button class="quick-btn danger">退出</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== VARIANT C: Hover popup ====== -->
+<div>
+  <div class="panel-label">方案 C · 悬浮弹出菜单</div>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="app-icon">🛡️</div>
+      <span class="app-title">健康管家</span>
+    </div>
+    <div class="nav-list">
+      <div class="nav-item"><span class="nav-item-icon">☁️</span> 数据上传</div>
+      <div class="nav-item"><span class="nav-item-icon">🔏</span> 数据脱敏</div>
+      <div class="nav-item"><span class="nav-item-icon">📈</span> 趋势分析</div>
+      <div class="nav-item"><span class="nav-item-icon">🕐</span> 历史记录</div>
+      <div class="nav-item"><span class="nav-item-icon">💬</span> AI 问答</div>
+      <div class="nav-item active"><span class="nav-item-icon">⚙️</span> 系统设置</div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <!-- USER ZONE C -->
+    <div class="user-zone-c">
+      <!-- Popup -->
+      <div class="popup-menu">
+        <div class="popup-user-header">
+          <div class="popup-avatar">健</div>
+          <div>
+            <div class="popup-name">健康用户 <span class="badge-vip">⭐ VIP</span></div>
+            <div class="popup-email">user@example.com</div>
+          </div>
+        </div>
+        <div class="popup-item"><span class="popup-item-icon">👤</span> 账号设置</div>
+        <div class="popup-item"><span class="popup-item-icon">⚡</span> 购买次数包</div>
+        <div class="popup-item"><span class="popup-item-icon">📋</span> 使用记录</div>
+        <div class="popup-divider"></div>
+        <div class="popup-item danger"><span class="popup-item-icon">🚪</span> 退出程序</div>
+      </div>
+      <!-- Trigger card -->
+      <div class="user-card-c">
+        <div class="avatar-c">健</div>
+        <div>
+          <div class="user-name-c">健康用户</div>
+          <div class="user-role-c">本地管理 · 悬停查看菜单</div>
+        </div>
+        <span style="color: #bcc8d8; font-size: 11px;">▲</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== VARIANT D: Minimal two-row ====== -->
+<div>
+  <div class="panel-label">方案 D · 极简双行</div>
+  <div class="app-window">
+    <div class="titlebar">
+      <div class="app-icon">🛡️</div>
+      <span class="app-title">健康管家</span>
+    </div>
+    <div class="nav-list">
+      <div class="nav-item"><span class="nav-item-icon">☁️</span> 数据上传</div>
+      <div class="nav-item"><span class="nav-item-icon">🔏</span> 数据脱敏</div>
+      <div class="nav-item"><span class="nav-item-icon">📈</span> 趋势分析</div>
+      <div class="nav-item"><span class="nav-item-icon">🕐</span> 历史记录</div>
+      <div class="nav-item"><span class="nav-item-icon">💬</span> AI 问答</div>
+      <div class="nav-item active"><span class="nav-item-icon">⚙️</span> 系统设置</div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <!-- USER ZONE D -->
+    <div class="user-zone-d">
+      <div class="user-row-d">
+        <div class="avatar-d">
+          健
+          <div class="online-badge"></div>
+        </div>
+        <div class="user-text-d">
+          <div class="user-name-d">健康用户</div>
+          <div class="user-desc-d">本地管理 · 剩余 7 次</div>
+        </div>
+        <button class="icon-btn-d" title="账号设置">⚙️</button>
+        <button class="icon-btn-d" title="购买次数">⚡</button>
+      </div>
+      <div class="logout-row-d">
+        <span style="font-size: 14px;">🚪</span>
+        退出程序
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ====== AUTH MODAL ====== -->
+<div class="modal-overlay" id="authModal">
+  <div class="modal">
+    <div class="modal-top">
+      <button class="modal-close" onclick="hideModal()">×</button>
+      <div class="modal-app-icon">🛡️</div>
+      <div class="modal-title">健康管家</div>
+      <div class="modal-subtitle">登录后解锁完整 AI 健康分析功能</div>
+    </div>
+    <div class="modal-body">
+      <div class="tab-row">
+        <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">登 录</button>
+        <button class="tab-btn" id="tab-register" onclick="switchTab('register')">注 册</button>
+      </div>
+
+      <!-- Login Form -->
+      <div id="form-login" class="form">
+        <div class="input-wrap">
+          <span class="input-icon">📱</span>
+          <input class="modal-input" type="text" placeholder="手机号或邮箱">
+        </div>
+        <div class="input-wrap">
+          <span class="input-icon">🔑</span>
+          <input class="modal-input" type="password" placeholder="密码">
+        </div>
+        <button class="submit-btn">登 录</button>
+        <div class="divider-or">或</div>
+        <button class="guest-btn" onclick="hideModal()">
+          👤 以临时访客身份使用
+        </button>
+      </div>
+
+      <!-- Register Form -->
+      <div id="form-register" class="form" style="display:none">
+        <div class="input-wrap">
+          <span class="input-icon">📱</span>
+          <input class="modal-input" type="text" placeholder="手机号">
+        </div>
+        <div class="code-row">
+          <div class="input-wrap" style="flex:1; position:relative">
+            <span class="input-icon">✉️</span>
+            <input class="modal-input" type="text" placeholder="验证码">
+          </div>
+          <button class="send-code-btn">发送验证码</button>
+        </div>
+        <div class="input-wrap">
+          <span class="input-icon">🔑</span>
+          <input class="modal-input" type="password" placeholder="设置密码（至少 8 位）">
+        </div>
+        <div class="gift-notice">
+          🎁 <span>注册成功即赠 <strong>1 次</strong> 免费 AI 调用体验</span>
+        </div>
+        <button class="submit-btn">立即注册</button>
+      </div>
+
+      <div class="modal-footer-note">
+        点击继续即表示同意 <a href="#">服务条款</a> 与 <a href="#">隐私政策</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showModal() {
+  document.getElementById('authModal').classList.add('show');
+}
+function hideModal() {
+  document.getElementById('authModal').classList.remove('show');
+}
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('form-login').style.display = tab === 'login' ? 'flex' : 'none';
+  document.getElementById('form-register').style.display = tab === 'register' ? 'flex' : 'none';
+}
+document.getElementById('authModal').addEventListener('click', function(e) {
+  if (e.target === this) hideModal();
+});
+</script>
+</body>
+</html>
