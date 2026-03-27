@@ -1,5 +1,9 @@
 # Tauri + Vue 3 + Element Plus 版本
 
+## 开发规范
+
+- Git 分支规范见 [docs/Git分支规范.md](docs/Git分支规范.md)
+
 ## 项目功能
 当前项目是一个医疗健康资料ocr与ai智能分析系统，实现了对用户上传的图片通过AI进行ocr解析，获取json化结果，并结合历史分析数据，综合后发送给AI进行分析，寻求AI给出建议，同时对关注的报告数据按照时间段进行直线图展示，显示数据变化趋势。
 - 支持一次上传多个图片，排队进行orc解析，获取结构化返回结果（json格式）
@@ -71,4 +75,3 @@ pnpm tauri build
 首先阅读 [需求文档](plan/requirements.md)，了解需求，及 [架构设计](plan/architecture.md)，然后阅读 [开发 Issue 进度清单](plan/progress_list.md)，最后按照清单中的 Issue 进行开发。
 
 开发完成后要更新，[text](plan/features-done.md)和plan/progress_list.md，记录开发进度
-
