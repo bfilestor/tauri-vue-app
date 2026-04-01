@@ -460,7 +460,8 @@ pub async fn test_provider_connection(
                 "content": "Hi, this is a connection test. Reply with 'OK' only."
             }
         ],
-        "max_tokens": 10,
+        "stream": true,
+        "max_tokens": 8192,
     });
 
     let mut request = client.post(&test_config.api_url);
@@ -479,9 +480,26 @@ pub async fn test_provider_connection(
             }
         }
     }
+    request = request.header("Content-Type", "application/json");
 
+    // 打印请求信息以便调试
+    log::info!("测试连接 - URL: {}, Model: {}, Provider Type: {}", test_config.api_url, model, provider_type);
+    log::info!("请求体: {}", request_body);
+    if let Some(request_clone) = request.try_clone() {
+        match request_clone.build() {
+            Ok(built_request) => {
+                for (k, v) in built_request.headers() {
+                    log::info!("请求头 {}: {}", k, v.to_str().unwrap_or("<non-utf8>"));
+                }
+            }
+            Err(e) => {
+                log::warn!("请求头打印失败，构建请求对象出错: {}", e);
+            }
+        }
+    } else {
+        log::warn!("请求头打印失败，RequestBuilder 无法克隆");
+    }
     let response = request
-        .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
         .await

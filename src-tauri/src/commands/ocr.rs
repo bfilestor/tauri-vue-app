@@ -224,6 +224,7 @@ pub async fn start_ocr(
                         ]
                     }
                 ],
+                "stream": true,
                 "max_tokens": 4096,
             });
 
@@ -553,6 +554,7 @@ pub async fn retry_ocr(
                     { "type": "image_url", "image_url": { "url": image_data_url } }
                 ]}
             ],
+            "stream": true,
             "max_tokens": 4096,
         });
 

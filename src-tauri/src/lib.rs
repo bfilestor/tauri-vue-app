@@ -163,6 +163,7 @@ async fn test_ai_connection(db: tauri::State<'_, db::Database>) -> Result<String
                 "content": "Hi, this is a connection test. Reply with 'OK' only."
             }
         ],
+        "stream": true,
         "max_tokens": 10,
     });
 
