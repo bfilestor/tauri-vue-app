@@ -496,7 +496,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
@@ -1130,5 +1130,13 @@ onMounted(() => {
   loadNetworkConfig()
   loadPrompts()
   loadProjects()
+})
+
+// 路由使用 keep-alive，返回设置页时需要主动刷新项目/指标数据
+onActivated(() => {
+  loadProjects()
+  if (showIndicatorDrawer.value && currentProject.value) {
+    loadIndicators()
+  }
 })
 </script>
