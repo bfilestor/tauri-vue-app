@@ -35,6 +35,17 @@ pub struct OcrProgress {
     pub status: String,
 }
 
+const DEFAULT_OCR_PROMPT_TEMPLATE: &str = r#"请识别图片中的医疗检查报告，提取所有检查指标。请严格按照以下JSON格式返回数组：[{"name":"指标名称","value":"数值","unit":"单位","reference_range":"参考范围","status":"正常/异常"}]。注意：reference_range字段请统一使用"reference_range"作为键名；status字段请依据数值和参考范围判断，仅返回"正常"或"异常"；如果图片中没有明确状态标记，请根据数值自行判断。只返回JSON数组，不要返回其他内容。"#;
+
+fn load_ocr_prompt_template(conn: &rusqlite::Connection) -> String {
+    conn.query_row(
+        "SELECT config_value FROM system_config WHERE config_key = 'ocr_prompt_template'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap_or_else(|_| DEFAULT_OCR_PROMPT_TEMPLATE.to_string())
+}
+
 fn mask_sensitive_value(value: &str) -> String {
     let char_count = value.chars().count();
     if char_count <= 8 {
@@ -59,6 +70,48 @@ fn sanitize_header_value(header_name: &str, header_value: &str) -> String {
     }
 }
 
+fn truncate_for_log(value: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= max_chars {
+        return value.to_string();
+    }
+    let prefix: String = chars.iter().take(max_chars).collect();
+    format!("{}...(truncated, total_chars={})", prefix, chars.len())
+}
+
+fn sanitize_request_body_for_log(input: &serde_json::Value) -> serde_json::Value {
+    let mut sanitized = input.clone();
+    sanitize_image_url_in_value(&mut sanitized);
+    sanitized
+}
+
+fn sanitize_image_url_in_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(image_url_val) = map.get_mut("image_url") {
+                if let serde_json::Value::Object(image_url_obj) = image_url_val {
+                    if let Some(url_val) = image_url_obj.get_mut("url") {
+                        if let Some(url_str) = url_val.as_str() {
+                            *url_val =
+                                serde_json::Value::String(truncate_for_log(url_str, 100));
+                        }
+                    }
+                }
+            }
+
+            for child in map.values_mut() {
+                sanitize_image_url_in_value(child);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for child in arr.iter_mut() {
+                sanitize_image_url_in_value(child);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn log_request_debug(
     tag: &str,
     request: &reqwest::RequestBuilder,
@@ -66,7 +119,8 @@ fn log_request_debug(
     request_body: &serde_json::Value,
 ) {
     log::info!("[{}] Request URL: {}", tag, request_url);
-    log::info!("[{}] Request Body: {}", tag, request_body);
+    let sanitized_request_body = sanitize_request_body_for_log(request_body);
+    log::info!("[{}] Request Body: {}", tag, sanitized_request_body);
 
     if let Some(request_clone) = request.try_clone() {
         match request_clone.build() {
@@ -152,13 +206,7 @@ pub async fn start_ocr(
         let model = http_client::get_default_model(&conn);
 
         // 获取 OCR Prompt 模板
-        let ocr_prompt: String = conn
-            .query_row(
-                "SELECT config_value FROM system_config WHERE config_key = 'ocr_prompt_template'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or_else(|_| "请识别图片中的医疗检查报告，提取所有检查指标。请严格按照以下JSON格式返回数组：[{\"name\":\"指标名称\",\"value\":\"数值\",\"unit\":\"单位\",\"reference_range\":\"参考范围\",\"status\":\"正常/异常\"}]。注意：reference_range字段请统一使用\"reference_range\"作为键名；status字段请依据数值和参考范围判断，仅返回\"正常\"或\"异常\"；如果图片中没有明确状态标记，请根据数值自行判断。只返回JSON数组，不要返回其他内容。".to_string());
+        let ocr_prompt = load_ocr_prompt_template(conn);
 
         // 加载所有项目的指标映射（用于匹配 indicator_values）
         let mut ind_stmt = conn
@@ -507,11 +555,7 @@ pub async fn retry_ocr(
 
             let config = http_client::load_ai_config(&conn)?;
             let model = http_client::get_default_model(&conn);
-            let ocr_prompt: String = conn.query_row(
-            "SELECT config_value FROM system_config WHERE config_key = 'ocr_prompt_template'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "请识别图片中的医疗检查报告...".to_string()); // Default shortened for brevity
+            let ocr_prompt = load_ocr_prompt_template(conn);
 
             // 加载指标映射
             let mut ind_stmt = conn
