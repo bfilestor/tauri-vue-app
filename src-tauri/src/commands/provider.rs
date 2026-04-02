@@ -32,6 +32,63 @@ pub struct AiModel {
     pub created_at: String,
 }
 
+fn mask_sensitive_value(value: &str) -> String {
+    let char_count = value.chars().count();
+    if char_count <= 8 {
+        return "***".to_string();
+    }
+
+    let start: String = value.chars().take(4).collect();
+    let end: String = value
+        .chars()
+        .skip(char_count.saturating_sub(4))
+        .take(4)
+        .collect();
+    format!("{}***{}", start, end)
+}
+
+fn sanitize_header_value(header_name: &str, header_value: &str) -> String {
+    match header_name.to_ascii_lowercase().as_str() {
+        "authorization" | "x-api-key" | "proxy-authorization" => {
+            mask_sensitive_value(header_value)
+        }
+        _ => header_value.to_string(),
+    }
+}
+
+fn log_request_debug(
+    tag: &str,
+    request: &reqwest::RequestBuilder,
+    request_url: &str,
+    request_body: &serde_json::Value,
+) {
+    log::info!("[{}] Request URL: {}", tag, request_url);
+    log::info!("[{}] Request Body: {}", tag, request_body);
+
+    if let Some(request_clone) = request.try_clone() {
+        match request_clone.build() {
+            Ok(built_request) => {
+                for (k, v) in built_request.headers() {
+                    let key = k.as_str();
+                    let raw_value = v.to_str().unwrap_or("<non-utf8>");
+                    let display_value = sanitize_header_value(key, raw_value);
+                    log::info!("[{}] Request Header {}: {}", tag, key, display_value);
+                }
+            }
+            Err(e) => {
+                log::warn!("[{}] Failed to build request for header logging: {}", tag, e);
+            }
+        }
+    } else {
+        log::warn!("[{}] RequestBuilder cannot be cloned for header logging", tag);
+    }
+}
+
+fn log_response_debug(tag: &str, status: reqwest::StatusCode, response_body: &str) {
+    log::info!("[{}] Response Status: {}", tag, status);
+    log::info!("[{}] Response Body: {}", tag, response_body);
+}
+
 // ===== Provider CRUD (ISS-055) =====
 
 #[tauri::command]
@@ -482,23 +539,19 @@ pub async fn test_provider_connection(
     }
     request = request.header("Content-Type", "application/json");
 
-    // 打印请求信息以便调试
-    log::info!("测试连接 - URL: {}, Model: {}, Provider Type: {}", test_config.api_url, model, provider_type);
-    log::info!("请求体: {}", request_body);
-    if let Some(request_clone) = request.try_clone() {
-        match request_clone.build() {
-            Ok(built_request) => {
-                for (k, v) in built_request.headers() {
-                    log::info!("请求头 {}: {}", k, v.to_str().unwrap_or("<non-utf8>"));
-                }
-            }
-            Err(e) => {
-                log::warn!("请求头打印失败，构建请求对象出错: {}", e);
-            }
-        }
-    } else {
-        log::warn!("请求头打印失败，RequestBuilder 无法克隆");
-    }
+    log::info!(
+        "测试连接 - URL: {}, Model: {}, Provider Type: {}",
+        test_config.api_url,
+        model,
+        provider_type
+    );
+    log_request_debug(
+        "test_provider_connection",
+        &request,
+        &test_config.api_url,
+        &request_body,
+    );
+
     let response = request
         .json(&request_body)
         .send()
@@ -506,11 +559,13 @@ pub async fn test_provider_connection(
         .map_err(|e| format!("连接失败: {}", e))?;
 
     let status = response.status();
+    let response_body = response.text().await.unwrap_or_default();
+    log_response_debug("test_provider_connection", status, &response_body);
+
     if status.is_success() {
         Ok(format!("连接成功！模型: {}", model))
     } else {
-        let body = response.text().await.unwrap_or_default();
-        Err(format!("API 返回错误 ({}): {}", status.as_u16(), body))
+        Err(format!("API 返回错误 ({}): {}", status.as_u16(), response_body))
     }
 }
 

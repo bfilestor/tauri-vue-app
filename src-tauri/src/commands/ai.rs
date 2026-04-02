@@ -16,6 +16,92 @@ pub struct AiAnalysis {
     pub created_at: String,
 }
 
+fn extract_text_segments_from_ai_chunk(chunk: &serde_json::Value) -> Vec<String> {
+    let mut segments = Vec::new();
+
+    let push_content_value = |segments: &mut Vec<String>, content: &serde_json::Value| {
+        if let Some(s) = content.as_str() {
+            if !s.is_empty() {
+                segments.push(s.to_string());
+            }
+            return;
+        }
+
+        if let Some(arr) = content.as_array() {
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    if !s.is_empty() {
+                        segments.push(s.to_string());
+                    }
+                    continue;
+                }
+
+                if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                    if !t.is_empty() {
+                        segments.push(t.to_string());
+                    }
+                } else if let Some(t) = item.get("content").and_then(|v| v.as_str()) {
+                    if !t.is_empty() {
+                        segments.push(t.to_string());
+                    }
+                }
+            }
+        }
+    };
+
+    if let Some(content) = chunk
+        .get("choices")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("delta"))
+        .and_then(|v| v.get("content"))
+    {
+        push_content_value(&mut segments, content);
+    }
+
+    if let Some(content) = chunk
+        .get("choices")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("message"))
+        .and_then(|v| v.get("content"))
+    {
+        push_content_value(&mut segments, content);
+    }
+
+    if let Some(text) = chunk.get("output_text").and_then(|v| v.as_str()) {
+        if !text.is_empty() {
+            segments.push(text.to_string());
+        }
+    }
+
+    segments
+}
+
+fn extract_text_segments_from_stream_line(line: &str) -> (Vec<String>, bool) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return (Vec::new(), false);
+    }
+
+    let payload = if let Some(v) = trimmed.strip_prefix("data:") {
+        v.trim()
+    } else {
+        trimmed
+    };
+
+    if payload == "[DONE]" {
+        return (Vec::new(), true);
+    }
+
+    if payload.is_empty() {
+        return (Vec::new(), false);
+    }
+
+    match serde_json::from_str::<serde_json::Value>(payload) {
+        Ok(chunk) => (extract_text_segments_from_ai_chunk(&chunk), false),
+        Err(_) => (Vec::new(), false),
+    }
+}
+
 /// 发起 AI 分析（流式返回）
 #[tauri::command]
 pub async fn start_ai_analysis(
@@ -277,8 +363,13 @@ pub async fn start_ai_analysis(
         let mut stream = response.bytes_stream();
 
         let mut buffer = String::new();
+        let mut done = false;
 
-        while let Some(chunk_result) = stream.next().await {
+        while !done {
+            let chunk_result = match stream.next().await {
+                Some(v) => v,
+                None => break,
+            };
             let chunk = match chunk_result {
                 Ok(c) => c,
                 Err(e) => {
@@ -295,27 +386,39 @@ pub async fn start_ai_analysis(
                 let line = buffer[..line_end].trim().to_string();
                 buffer = buffer[line_end + 1..].to_string();
 
-                if line.is_empty() || line == "data: [DONE]" {
-                    continue;
+                let (segments, is_done) = extract_text_segments_from_stream_line(&line);
+                for content in segments {
+                    full_content.push_str(&content);
+                    app.emit(
+                        "ai_stream_chunk",
+                        serde_json::json!({
+                            "record_id": record_id_clone,
+                            "analysis_id": analysis_id_clone,
+                            "content": content,
+                        }),
+                    )
+                    .ok();
                 }
+                if is_done {
+                    done = true;
+                    break;
+                }
+            }
+        }
 
-                if let Some(json_str) = line.strip_prefix("data: ") {
-                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
-                        if let Some(content) = data["choices"][0]["delta"]["content"].as_str() {
-                            full_content.push_str(content);
-                            // 发送流式 chunk 事件
-                            app.emit(
-                                "ai_stream_chunk",
-                                serde_json::json!({
-                                    "record_id": record_id_clone,
-                                    "analysis_id": analysis_id_clone,
-                                    "content": content,
-                                }),
-                            )
-                            .ok();
-                        }
-                    }
-                }
+        if !done && !buffer.trim().is_empty() {
+            let (segments, _) = extract_text_segments_from_stream_line(buffer.trim());
+            for content in segments {
+                full_content.push_str(&content);
+                app.emit(
+                    "ai_stream_chunk",
+                    serde_json::json!({
+                        "record_id": record_id_clone,
+                        "analysis_id": analysis_id_clone,
+                        "content": content,
+                    }),
+                )
+                .ok();
             }
         }
 
@@ -683,8 +786,13 @@ pub async fn chat_with_ai(
         // Removed `full_content` initialization here, using buffer for lines
         let mut full_response_content = String::new();
         let mut buffer = String::new();
+        let mut done = false;
 
-        while let Some(chunk_result) = stream.next().await {
+        while !done {
+            let chunk_result = match stream.next().await {
+                Some(v) => v,
+                None => break,
+            };
             let chunk = match chunk_result {
                 Ok(c) => c,
                 Err(_) => break,
@@ -697,25 +805,37 @@ pub async fn chat_with_ai(
                 let line = buffer[..line_end].trim().to_string();
                 buffer = buffer[line_end + 1..].to_string();
 
-                if line.is_empty() || line == "data: [DONE]" {
-                    continue;
+                let (segments, is_done) = extract_text_segments_from_stream_line(&line);
+                for content in segments {
+                    full_response_content.push_str(&content);
+                    app.emit(
+                        "chat_stream_chunk",
+                        serde_json::json!({
+                            "id": ai_msg_id_clone,
+                            "content": content
+                        }),
+                    )
+                    .ok();
                 }
+                if is_done {
+                    done = true;
+                    break;
+                }
+            }
+        }
 
-                if let Some(json_str) = line.strip_prefix("data: ") {
-                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
-                        if let Some(content) = data["choices"][0]["delta"]["content"].as_str() {
-                            full_response_content.push_str(content);
-                            app.emit(
-                                "chat_stream_chunk",
-                                serde_json::json!({
-                                    "id": ai_msg_id_clone,
-                                    "content": content
-                                }),
-                            )
-                            .ok();
-                        }
-                    }
-                }
+        if !done && !buffer.trim().is_empty() {
+            let (segments, _) = extract_text_segments_from_stream_line(buffer.trim());
+            for content in segments {
+                full_response_content.push_str(&content);
+                app.emit(
+                    "chat_stream_chunk",
+                    serde_json::json!({
+                        "id": ai_msg_id_clone,
+                        "content": content
+                    }),
+                )
+                .ok();
             }
         }
 
