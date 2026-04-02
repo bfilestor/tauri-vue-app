@@ -666,19 +666,79 @@ const ocrProgress = reactive({
   completed: 0,
   current_file: '',
 })
+let ocrStatusPollTimer = null
+
+const stopOcrStatusPolling = () => {
+  if (ocrStatusPollTimer) {
+    clearInterval(ocrStatusPollTimer)
+    ocrStatusPollTimer = null
+  }
+}
+
+const pollOcrStatusOnce = async (recordId) => {
+  try {
+    const status = await invoke('get_ocr_status', { recordId, record_id: recordId })
+    if (ocrProgress.record_id !== recordId) return
+
+    const totalFiles = Number(status.total_files || 0)
+    const successCount = Number(status.success_ocr || 0)
+    const failedCount = Number(status.failed_ocr || 0)
+    const completed = successCount + failedCount
+
+    ocrProgress.total = Math.max(totalFiles, 1)
+    ocrProgress.completed = Math.min(completed, ocrProgress.total)
+
+    if (status.record_status !== 'ocr_processing') {
+      ocrLoading.value = false
+      stopOcrStatusPolling()
+      await loadRecords(true)
+      if (showOcrDialog.value && currentViewRecord.value) {
+        viewOcrResults(currentViewRecord.value)
+      }
+    }
+  } catch (e) {
+    console.warn('轮询 OCR 状态失败:', e)
+  }
+}
+
+const startOcrStatusPolling = (recordId) => {
+  stopOcrStatusPolling()
+  ocrStatusPollTimer = setInterval(() => {
+    if (!ocrLoading.value || ocrProgress.record_id !== recordId) {
+      stopOcrStatusPolling()
+      return
+    }
+    pollOcrStatusOnce(recordId)
+  }, 2000)
+  pollOcrStatusOnce(recordId)
+}
+
+const recoverOcrPollingFromRecords = () => {
+  const processingRecord = records.value.find(r => r.status === 'ocr_processing')
+  if (!processingRecord) return
+
+  ocrLoading.value = true
+  ocrProgress.record_id = processingRecord.id
+  ocrProgress.total = Math.max(processingRecord.file_count || 0, 1)
+  ocrProgress.completed = 0
+  if (!ocrProgress.current_file) ocrProgress.current_file = '处理中...'
+  startOcrStatusPolling(processingRecord.id)
+}
 
 const startOcr = async (record) => {
   ocrLoading.value = true
   ocrProgress.record_id = record.id
-  ocrProgress.total = record.file_count || 0
+  ocrProgress.total = Math.max(record.file_count || 0, 1)
   ocrProgress.completed = 0
   ocrProgress.current_file = ''
 
   try {
     await invoke('start_ocr', { recordId: record.id })
+    startOcrStatusPolling(record.id)
     ElMessage.info('OCR 识别已启动，请稍候...')
   } catch (e) {
     ocrLoading.value = false
+    stopOcrStatusPolling()
     ElMessage.error('启动OCR失败: ' + e)
   }
 }
@@ -949,6 +1009,7 @@ const setupEventListeners = async () => {
   unlistenComplete = await listen('ocr_complete', (event) => {
     const data = event.payload
     ocrLoading.value = false
+    stopOcrStatusPolling()
 
     if (data.success > 0) {
       ElNotification({
@@ -977,6 +1038,7 @@ const setupEventListeners = async () => {
   unlistenError = await listen('ocr_error', (event) => {
     const data = event.payload
     ocrLoading.value = false
+    stopOcrStatusPolling()
     ElMessage.error('OCR 错误: ' + data.error)
     loadRecords(true)
   })
@@ -1076,7 +1138,14 @@ onMounted(() => {
   setupEventListeners()
 })
 
+watch(records, () => {
+  if (!ocrLoading.value) {
+    recoverOcrPollingFromRecords()
+  }
+}, { deep: false })
+
 onUnmounted(() => {
+  stopOcrStatusPolling()
   unlistenProgress?.()
   unlistenComplete?.()
   unlistenError?.()

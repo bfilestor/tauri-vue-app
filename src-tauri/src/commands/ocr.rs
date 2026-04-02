@@ -35,6 +35,63 @@ pub struct OcrProgress {
     pub status: String,
 }
 
+fn mask_sensitive_value(value: &str) -> String {
+    let char_count = value.chars().count();
+    if char_count <= 8 {
+        return "***".to_string();
+    }
+
+    let start: String = value.chars().take(4).collect();
+    let end: String = value
+        .chars()
+        .skip(char_count.saturating_sub(4))
+        .take(4)
+        .collect();
+    format!("{}***{}", start, end)
+}
+
+fn sanitize_header_value(header_name: &str, header_value: &str) -> String {
+    match header_name.to_ascii_lowercase().as_str() {
+        "authorization" | "x-api-key" | "proxy-authorization" => {
+            mask_sensitive_value(header_value)
+        }
+        _ => header_value.to_string(),
+    }
+}
+
+fn log_request_debug(
+    tag: &str,
+    request: &reqwest::RequestBuilder,
+    request_url: &str,
+    request_body: &serde_json::Value,
+) {
+    log::info!("[{}] Request URL: {}", tag, request_url);
+    log::info!("[{}] Request Body: {}", tag, request_body);
+
+    if let Some(request_clone) = request.try_clone() {
+        match request_clone.build() {
+            Ok(built_request) => {
+                for (k, v) in built_request.headers() {
+                    let key = k.as_str();
+                    let raw_value = v.to_str().unwrap_or("<non-utf8>");
+                    let display_value = sanitize_header_value(key, raw_value);
+                    log::info!("[{}] Request Header {}: {}", tag, key, display_value);
+                }
+            }
+            Err(e) => {
+                log::warn!("[{}] Failed to build request for header logging: {}", tag, e);
+            }
+        }
+    } else {
+        log::warn!("[{}] RequestBuilder cannot be cloned for header logging", tag);
+    }
+}
+
+fn log_response_debug(tag: &str, status: reqwest::StatusCode, response_body: &str) {
+    log::info!("[{}] Response Status: {}", tag, status);
+    log::info!("[{}] Response Body: {}", tag, response_body);
+}
+
 /// 发起 OCR 识别（异步执行，通过 Event 通知前端）
 #[tauri::command]
 pub async fn start_ocr(
@@ -229,10 +286,19 @@ pub async fn start_ocr(
             });
 
             // 发送请求
-            let response = match client
+            let request = client
                 .post(&config.api_url)
                 .header("Authorization", format!("Bearer {}", config.api_key))
-                .header("Content-Type", "application/json")
+                .header("Content-Type", "application/json");
+
+            log_request_debug(
+                "start_ocr",
+                &request,
+                &config.api_url,
+                &request_body,
+            );
+
+            let response = match request
                 .json(&request_body)
                 .send()
                 .await
@@ -253,10 +319,12 @@ pub async fn start_ocr(
                 }
             };
 
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                let err_msg = format!("{}: API错误({}) - {}", filename, status, body);
+            let status = response.status();
+            let response_body = response.text().await.unwrap_or_default();
+            log_response_debug("start_ocr", status, &response_body);
+
+            if !status.is_success() {
+                let err_msg = format!("{}: API错误({}) - {}", filename, status, response_body);
                 error_messages.push(err_msg.clone());
                 save_ocr_error(
                     &app,
@@ -269,8 +337,8 @@ pub async fn start_ocr(
                 continue;
             }
 
-            // 解析响应
-            let resp_json: serde_json::Value = match response.json().await {
+            // 解析响应（兼容 stream=true 的 SSE 格式）
+            let content = match extract_ai_content_from_response_body(&response_body) {
                 Ok(v) => v,
                 Err(e) => {
                     let err_msg = format!("{}: 解析响应失败 - {}", filename, e);
@@ -286,12 +354,6 @@ pub async fn start_ocr(
                     continue;
                 }
             };
-
-            // 提取 AI 返回的内容
-            let content = resp_json["choices"][0]["message"]["content"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
 
             log::info!("OCR AI Raw Response (File: {}): {}", filename, content);
 
@@ -558,10 +620,19 @@ pub async fn retry_ocr(
             "max_tokens": 4096,
         });
 
-        let response = match client
+        let request = client
             .post(&config.api_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+
+        log_request_debug(
+            "retry_ocr",
+            &request,
+            &config.api_url,
+            &request_body,
+        );
+
+        let response = match request
             .json(&request_body)
             .send()
             .await
@@ -573,29 +644,26 @@ pub async fn retry_ocr(
             }
         };
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let response_body = response.text().await.unwrap_or_default();
+        log_response_debug("retry_ocr", status, &response_body);
+
+        if !status.is_success() {
             update_ocr_failed(
                 &app,
                 &ocr_id_clone,
-                &format!("API错误({}): {}", status, body),
+                &format!("API错误({}): {}", status, response_body),
             );
             return;
         }
 
-        let resp_json: serde_json::Value = match response.json().await {
+        let content = match extract_ai_content_from_response_body(&response_body) {
             Ok(v) => v,
             Err(e) => {
                 update_ocr_failed(&app, &ocr_id_clone, &format!("解析响应失败: {}", e));
                 return;
             }
         };
-
-        let content = resp_json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
         log::info!("Retry OCR AI Raw Response: {}", content);
         let parsed_items = extract_json_array(&content);
         let parsed_items_str = serde_json::to_string(&parsed_items).unwrap_or("[]".to_string());
@@ -978,6 +1046,98 @@ fn extract_json_array(content: &str) -> Vec<OcrParsedItem> {
     }
 
     Vec::new()
+}
+
+/// 从 AI 接口响应体中提取最终文本内容，兼容：
+/// 1) 普通 JSON: choices[0].message.content
+/// 2) SSE 流: data: {...choices[0].delta.content...}
+fn extract_ai_content_from_response_body(response_body: &str) -> Result<String, String> {
+    if let Ok(resp_json) = serde_json::from_str::<serde_json::Value>(response_body) {
+        if let Some(content) = extract_content_from_chat_json(&resp_json) {
+            return Ok(content);
+        }
+        return Err("JSON 响应缺少可用的 content 字段".to_string());
+    }
+
+    if let Some(content) = extract_content_from_sse_body(response_body) {
+        return Ok(content);
+    }
+
+    Err("响应既不是标准 JSON，也不是可解析的 SSE 数据".to_string())
+}
+
+fn extract_content_from_chat_json(v: &serde_json::Value) -> Option<String> {
+    let content_node = v
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"));
+
+    if let Some(s) = content_node.and_then(|c| c.as_str()) {
+        return Some(s.to_string());
+    }
+
+    // 兼容 content 为数组片段的返回
+    if let Some(arr) = content_node.and_then(|c| c.as_array()) {
+        let text = arr
+            .iter()
+            .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
+            .collect::<String>();
+        if !text.is_empty() {
+            return Some(text);
+        }
+    }
+
+    // 兼容部分接口直接返回 output_text
+    v.get("output_text")
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string())
+}
+
+fn extract_content_from_sse_body(response_body: &str) -> Option<String> {
+    let mut merged = String::new();
+
+    for raw_line in response_body.lines() {
+        let line = raw_line.trim();
+        if !line.starts_with("data:") {
+            continue;
+        }
+
+        let payload = line.trim_start_matches("data:").trim();
+        if payload.is_empty() {
+            continue;
+        }
+        if payload == "[DONE]" {
+            break;
+        }
+
+        let chunk = match serde_json::from_str::<serde_json::Value>(payload) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        if let Some(delta_text) = chunk
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("delta"))
+            .and_then(|d| d.get("content"))
+            .and_then(|c| c.as_str())
+        {
+            merged.push_str(delta_text);
+            continue;
+        }
+
+        // 兼容流式最后一个分片直接给出完整 message.content
+        if let Some(msg_text) = extract_content_from_chat_json(&chunk) {
+            merged.push_str(&msg_text);
+        }
+    }
+
+    if merged.is_empty() {
+        None
+    } else {
+        Some(merged)
+    }
 }
 
 /// 模糊匹配指标名称
