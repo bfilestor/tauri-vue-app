@@ -12,6 +12,16 @@ import {
 } from './device-security.js'
 import { createStorageAdapter } from './storage.js'
 
+const DEFAULT_UNAUTHORIZED_CODES = new Set([
+  401,
+  '401',
+  'HTTP_401',
+  'UNAUTHORIZED',
+  'ACCESS_TOKEN_EXPIRED',
+  'TOKEN_EXPIRED',
+  'TOKEN_INVALID',
+])
+
 function isJsonLikeBody(value) {
   if (value == null) {
     return false
@@ -42,6 +52,47 @@ function buildAbsoluteUrl(baseUrl, requestPath) {
   }
 
   return new URL(requestPath, baseUrl).toString()
+}
+
+function resolveRequestPathname(requestPath) {
+  const placeholderBaseUrl = 'https://health-monitor.local'
+  const url = requestPath.startsWith('http://') || requestPath.startsWith('https://')
+    ? new URL(requestPath)
+    : new URL(requestPath, placeholderBaseUrl)
+
+  return url.pathname
+}
+
+function isAuthRefreshRequest(requestPath) {
+  return resolveRequestPathname(requestPath) === '/app-api/auth/refresh-token'
+}
+
+function isUnauthorizedError(response, payload, error) {
+  if (response?.status === 401) {
+    return true
+  }
+
+  if (payload && typeof payload === 'object' && DEFAULT_UNAUTHORIZED_CODES.has(payload.code)) {
+    return true
+  }
+
+  return DEFAULT_UNAUTHORIZED_CODES.has(error?.code)
+}
+
+function shouldAttemptAuthRefresh({ config, response, payload, error, requestPath, meta, retried }) {
+  if (retried || meta.skipAuthRefresh) {
+    return false
+  }
+
+  if (isAuthRefreshRequest(requestPath) || typeof config.refreshAccessToken !== 'function') {
+    return false
+  }
+
+  if (typeof config.shouldRefreshAuth === 'function') {
+    return Boolean(config.shouldRefreshAuth({ response, payload, error, requestPath, meta }))
+  }
+
+  return isUnauthorizedError(response, payload, error)
 }
 
 async function readResponseBody(response) {
@@ -79,6 +130,9 @@ export function createRequestClient(initialConfig = {}) {
     nonceFactory: createNonce,
     traceIdFactory: createTraceId,
     now: () => Date.now(),
+    refreshAccessToken: undefined,
+    onAuthRefreshFailure: undefined,
+    shouldRefreshAuth: undefined,
     ...initialConfig,
   }
 
@@ -115,7 +169,7 @@ export function createRequestClient(initialConfig = {}) {
     })
   }
 
-  async function request(requestPath, init = {}, meta = {}) {
+  async function executeRequest(requestPath, init = {}, meta = {}, context = { retried: false }) {
     const method = (init.method || 'GET').toUpperCase()
     const fetchImpl = config.fetchImpl
 
@@ -201,13 +255,48 @@ export function createRequestClient(initialConfig = {}) {
       body,
     })
     const payload = await readResponseBody(response)
+    const hasBusinessError = payload && typeof payload === 'object' && 'code' in payload && payload.code !== 200
 
-    if (!response.ok) {
-      throw normalizeResponseError(response, payload)
-    }
+    if (!response.ok || hasBusinessError) {
+      const error = normalizeResponseError(response, payload)
 
-    if (payload && typeof payload === 'object' && 'code' in payload && payload.code !== 200) {
-      throw normalizeResponseError(response, payload)
+      if (shouldAttemptAuthRefresh({
+        config,
+        response,
+        payload,
+        error,
+        requestPath,
+        meta,
+        retried: context.retried,
+      })) {
+        try {
+          await config.refreshAccessToken({
+            requestPath,
+            method,
+            meta,
+            payload,
+            responseStatus: response.status,
+            storage,
+          })
+
+          return executeRequest(requestPath, init, meta, { retried: true })
+        } catch (refreshError) {
+          if (typeof config.onAuthRefreshFailure === 'function') {
+            await config.onAuthRefreshFailure({
+              requestPath,
+              method,
+              meta,
+              payload,
+              responseStatus: response.status,
+              error,
+              refreshError,
+              storage,
+            })
+          }
+        }
+      }
+
+      throw error
     }
 
     if (meta.unwrapData === false) {
@@ -222,12 +311,14 @@ export function createRequestClient(initialConfig = {}) {
   return {
     configure,
     initialize,
-    request,
+    request(requestPath, init = {}, meta = {}) {
+      return executeRequest(requestPath, init, meta)
+    },
     get(requestPath, init = {}, meta = {}) {
-      return request(requestPath, { ...init, method: 'GET' }, meta)
+      return executeRequest(requestPath, { ...init, method: 'GET' }, meta)
     },
     post(requestPath, body, init = {}, meta = {}) {
-      return request(requestPath, { ...init, method: 'POST', body }, meta)
+      return executeRequest(requestPath, { ...init, method: 'POST', body }, meta)
     },
     storage,
   }

@@ -24,3 +24,5 @@ export {
 } from './constants.js'
 export { createRequestClient } from './request-client.js'
 export { createMemoryStorage, createStorageAdapter } from './storage.js'
+export { createAuthSessionStore } from './session-store.js'
+export { createAuthApi } from './auth-api.js'

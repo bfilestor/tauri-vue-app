@@ -10,6 +10,10 @@ export const SECURITY_STORAGE_KEYS = {
   signatureMode: 'health.security.signatureMode',
   lastActivationError: 'health.security.lastActivationError',
   accessToken: 'health.auth.accessToken',
+  refreshToken: 'health.auth.refreshToken',
+  userInfo: 'health.auth.userInfo',
+  guestMode: 'health.auth.guestMode',
+  trialGiftPending: 'health.auth.trialGiftPending',
 }
 
 export const SIGNATURE_MODE = {
