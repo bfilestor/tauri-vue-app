@@ -124,10 +124,19 @@
 
           <!-- 已上传文件列表 -->
           <div v-if="currentFiles.length > 0">
-            <h3 class="text-sm font-bold text-slate-700 mb-3">
-              <span class="material-symbols-outlined text-base align-middle mr-1">folder_open</span>
-              已上传文件 ({{ currentFiles.length }})
-            </h3>
+            <div class="flex items-center justify-between mb-3 gap-3">
+              <h3 class="text-sm font-bold text-slate-700 min-w-0">
+                <span class="material-symbols-outlined text-base align-middle mr-1">folder_open</span>
+                已上传文件 ({{ filteredCurrentFiles.length }})
+              </h3>
+              <div class="flex items-center gap-2 shrink-0">
+                <el-select v-model="selectedFileCategoryId" class="shrink-0" size="small" style="width: 120px; min-width: 120px;" placeholder="全部">
+                  <el-option v-for="opt in fileCategoryOptions" :key="opt.id" :label="opt.name" :value="opt.id" />
+                </el-select>
+              </div>
+            </div>
+
+            <div v-if="filteredCurrentFiles.length === 0" class="text-xs text-slate-400 mb-2">当前子分类暂无图片</div>
 
             <!-- 按项目分组展示 -->
             <div v-for="group in fileGroups" :key="group.projectName" class="mb-4">
@@ -527,6 +536,7 @@ const toggleExpand = (id) => {
     expandedId.value = null
   } else {
     expandedId.value = id
+    selectedFileCategoryId.value = ALL_CATEGORY_VALUE
     loadFiles(id)
   }
 }
@@ -534,11 +544,21 @@ const toggleExpand = (id) => {
 // ===== 项目列表 =====
 const activeProjects = ref([])
 const selectedProjectId = ref('')
+const ALL_CATEGORY_VALUE = '__all__'
+const selectedFileCategoryId = ref(ALL_CATEGORY_VALUE)
+
+const fileCategoryOptions = computed(() => [
+  { id: ALL_CATEGORY_VALUE, name: '全部' },
+  ...activeProjects.value.map(p => ({ id: p.id, name: p.name })),
+])
 
 const loadProjects = async () => {
   try {
     const all = await invoke('list_projects')
     activeProjects.value = all.filter(p => p.is_active)
+    if (!selectedFileCategoryId.value) {
+      selectedFileCategoryId.value = ALL_CATEGORY_VALUE
+    }
     if (activeProjects.value.length > 0 && !selectedProjectId.value) {
       selectedProjectId.value = activeProjects.value[0].id
     }
@@ -587,6 +607,7 @@ const doUpload = async (record) => {
     await invoke('upload_files', { files })
     ElMessage.success(`${files.length} 个文件上传成功`)
     pendingFiles.value = []
+    selectedFileCategoryId.value = selectedProjectId.value || ALL_CATEGORY_VALUE
     await loadFiles(record.id)
     await loadRecords(true)
   } catch (e) {
@@ -598,6 +619,12 @@ const doUpload = async (record) => {
 
 // ===== 已上传文件 =====
 const currentFiles = ref([])
+const filteredCurrentFiles = computed(() => {
+  if (selectedFileCategoryId.value === ALL_CATEGORY_VALUE) {
+    return currentFiles.value
+  }
+  return currentFiles.value.filter(f => f.project_id === selectedFileCategoryId.value)
+})
 
 const loadFiles = async (recordId) => {
   try {
@@ -620,7 +647,7 @@ const loadFiles = async (recordId) => {
 // 按项目分组
 const fileGroups = computed(() => {
   const groups = {}
-  for (const f of currentFiles.value) {
+  for (const f of filteredCurrentFiles.value) {
     const name = f.project_name || '未知项目'
     if (!groups[name]) groups[name] = { projectName: name, files: [] }
     groups[name].files.push(f)
@@ -1143,6 +1170,19 @@ watch(records, () => {
     recoverOcrPollingFromRecords()
   }
 }, { deep: false })
+
+watch(selectedFileCategoryId, (value) => {
+  if (!value) {
+    selectedFileCategoryId.value = ALL_CATEGORY_VALUE
+  }
+}, { immediate: true })
+
+watch(fileCategoryOptions, (options) => {
+  const exists = options.some(opt => opt.id === selectedFileCategoryId.value)
+  if (!exists) {
+    selectedFileCategoryId.value = ALL_CATEGORY_VALUE
+  }
+}, { immediate: true })
 
 onUnmounted(() => {
   stopOcrStatusPolling()
