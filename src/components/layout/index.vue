@@ -52,6 +52,9 @@
               <div class="h-full rounded-full bg-gradient-to-r from-[#2b8cee] to-cyan-400" :style="{ width: `${userAreaState.usage.percent}%` }"></div>
             </div>
           </div>
+          <p v-if="usageFeedback.stale" class="text-[11px] text-amber-600 mt-2">
+            次数刷新失败，当前显示缓存数据
+          </p>
           <div class="grid grid-cols-3 gap-2 mt-3">
             <button class="text-[11px] rounded-md border border-slate-200 bg-white px-1 py-1.5 text-slate-600 hover:border-[#2b8cee] hover:text-[#2b8cee] transition-colors" @click="handlePurchaseClick">
               购买次数
@@ -179,16 +182,38 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AuthEntryDialog from '@/components/auth/AuthEntryDialog.vue'
 import { AUTH_DIALOG_TABS } from '@/modules/security/auth-dialog-controller.js'
-import { getAccountContextService, getAuthApi, resolveSidebarUserState } from '@/modules/security/index.js'
+import {
+  buildAccountMenuEntries,
+  getAuthApi,
+  resolveSidebarUserState,
+  resolveUsageFeedback,
+  useAccountContext,
+} from '@/modules/security/index.js'
 
 const route = useRoute()
 const appWindow = getCurrentWindow()
 const authApi = getAuthApi()
-const accountContextService = getAccountContextService()
+const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
 const authDialogVisible = ref(false)
 const authDialogTab = ref(AUTH_DIALOG_TABS.login)
 const sessionState = ref(authApi.getSessionState())
-const userAreaState = computed(() => resolveSidebarUserState(sessionState.value))
+const latestUsageFeedback = ref(resolveUsageFeedback(accountContextState))
+const usageFeedback = computed(() => {
+  const usage = resolveUsageFeedback(accountContextState, latestUsageFeedback.value)
+  if (!usage.stale) {
+    latestUsageFeedback.value = usage
+  }
+  return usage
+})
+const userAreaState = computed(() => resolveSidebarUserState({
+  ...sessionState.value,
+  userInfo: {
+    ...(sessionState.value?.userInfo || {}),
+    remainingTimes: usageFeedback.value.remaining,
+    totalTimes: usageFeedback.value.total,
+  },
+}))
+const accountMenuEntries = computed(() => buildAccountMenuEntries(userAreaState.value.mode === 'authenticated'))
 const showHeaderAuthButtons = computed(() => userAreaState.value.mode !== 'authenticated')
 
 const menuItems = [
@@ -213,9 +238,9 @@ const refreshSessionState = () => {
   sessionState.value = authApi.getSessionState()
 }
 
-const refreshAccountContext = async (options = {}) => {
+const refreshAccountContextWithFeedback = async (options = {}) => {
   try {
-    await accountContextService.refreshForCurrentSession(options)
+    await refreshAccountContext(options)
   } catch (error) {
     const message = error?.message || '账户上下文加载失败'
     ElMessage.error(message)
@@ -225,13 +250,13 @@ const refreshAccountContext = async (options = {}) => {
 const handleAuthSuccess = () => {
   authDialogVisible.value = false
   refreshSessionState()
-  void refreshAccountContext({ force: true })
+  void refreshAccountContextWithFeedback({ force: true })
 }
 
 const handleGuestEntered = () => {
   authDialogVisible.value = false
   refreshSessionState()
-  void refreshAccountContext({ force: true })
+  void refreshAccountContextWithFeedback({ force: true })
 }
 
 const handlePurchaseClick = () => {
@@ -239,14 +264,15 @@ const handlePurchaseClick = () => {
 }
 
 const handleAccountMenu = () => {
-  ElMessage.info('账号菜单详情将在后续 Issue 接入')
+  const labels = accountMenuEntries.value.map((item) => item.label).join(' / ')
+  ElMessage.info(`账号快捷入口：${labels}`)
 }
 
 const handleLogout = async () => {
   try {
     await authApi.logout()
     refreshSessionState()
-    await refreshAccountContext({ force: true })
+    await refreshAccountContextWithFeedback({ force: true })
     ElMessage.success('已退出登录')
   } catch (error) {
     ElMessage.error(error?.message || '退出登录失败')
@@ -272,7 +298,7 @@ const handleQuit = async () => {
 
 onMounted(() => {
   refreshSessionState()
-  void refreshAccountContext({ force: true })
+  void refreshAccountContextWithFeedback({ force: true })
 })
 </script>
 

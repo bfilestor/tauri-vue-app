@@ -38,3 +38,5 @@ export {
   createAccountContextService,
 } from './account-context-service.js'
 export { getAccountContextService } from './account-service.js'
+export { buildAccountMenuEntries, resolveUsageFeedback } from './account-view.js'
+export { useAccountContext } from './use-account-context.js'

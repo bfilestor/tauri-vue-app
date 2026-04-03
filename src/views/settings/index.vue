@@ -8,6 +8,53 @@
     <el-tabs v-model="activeTab" class="w-full">
       <!-- ========== 模型服务 Tab (ISS-060~066) ========== -->
       <el-tab-pane label="模型服务" name="ai">
+        <el-card shadow="never" class="!rounded-xl !border-slate-200 mb-6">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
+                <span class="material-symbols-outlined text-blue-500 text-[18px]">credit_score</span>
+                通用模式次数概览
+              </div>
+              <el-button size="small" plain :loading="refreshingAccountContext" @click="handleRefreshAccountContext">
+                刷新余额
+              </el-button>
+            </div>
+          </template>
+          <div class="space-y-4">
+            <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
+              <div class="flex items-center justify-between text-sm text-slate-600">
+                <span>当前剩余次数</span>
+                <span class="font-bold text-blue-600">{{ accountUsage.label }}</span>
+              </div>
+              <div class="mt-2 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full" :style="{ width: `${accountUsage.percent}%` }"></div>
+              </div>
+              <p v-if="accountUsage.stale" class="mt-2 text-xs text-amber-600">余额接口异常，当前显示缓存数据</p>
+            </div>
+            <el-alert
+              v-if="accountContextState.memberBlocked"
+              type="warning"
+              :closable="false"
+              :title="accountContextState.memberBlockedReason || '未找到默认成员，请先在账户中心设置默认成员'"
+            />
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div
+                v-for="card in accountPackageCards"
+                :key="card.targetCalls"
+                class="rounded-xl border p-3"
+                :class="card.missing ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50/40'"
+              >
+                <p class="text-sm font-bold text-slate-800">{{ card.title }}</p>
+                <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-slate-600'">
+                  {{ card.missing ? '该档套餐暂不可用' : `SKU: ${card.product?.skuId || '-'}` }}
+                </p>
+                <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-blue-600'">
+                  {{ card.missing ? '请稍后刷新商品列表' : `价格: ¥${card.product?.price ?? '-'}` }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </el-card>
         <div class="flex h-[620px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <!-- 左侧: 提供商列表 -->
           <div class="w-60 border-r border-slate-100 bg-slate-50/80 flex flex-col shrink-0">
@@ -500,9 +547,12 @@ import { ref, reactive, onMounted, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
+import { resolveUsageFeedback, useAccountContext } from '@/modules/security/index.js'
 
 // ===== 多提供商管理 (ISS-060~066) =====
 const activeTab = ref('ai')
+const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const refreshingAccountContext = ref(false)
 const searchProvider = ref('')
 const activeProviderId = ref('')
 const testingProviderId = ref('')
@@ -578,6 +628,8 @@ const groupedModels = computed(() => {
   }
   return groups
 })
+const accountUsage = computed(() => resolveUsageFeedback(accountContextState))
+const accountPackageCards = computed(() => accountContextState.packageCards || [])
 
 // ===== 颜色映射 =====
 const PROVIDER_COLORS = {
@@ -589,6 +641,17 @@ const PROVIDER_COLORS = {
   custom: '#6366f1',
 }
 const getProviderColor = (type) => PROVIDER_COLORS[type] || '#6366f1'
+
+const handleRefreshAccountContext = async () => {
+  refreshingAccountContext.value = true
+  try {
+    await refreshAccountContext({ force: true })
+  } catch (e) {
+    ElMessage.error('账户次数刷新失败: ' + (e?.message || e))
+  } finally {
+    refreshingAccountContext.value = false
+  }
+}
 
 // ===== 加载数据 =====
 const loadProviders = async () => {
@@ -1126,6 +1189,7 @@ const handleRestoreData = async () => {
 
 // ===== 初始化 =====
 onMounted(() => {
+  void handleRefreshAccountContext()
   loadProviders()
   loadNetworkConfig()
   loadPrompts()
@@ -1134,6 +1198,9 @@ onMounted(() => {
 
 // 路由使用 keep-alive，返回设置页时需要主动刷新项目/指标数据
 onActivated(() => {
+  if (activeTab.value === 'ai') {
+    void handleRefreshAccountContext()
+  }
   loadProjects()
   if (showIndicatorDrawer.value && currentProject.value) {
     loadIndicators()
