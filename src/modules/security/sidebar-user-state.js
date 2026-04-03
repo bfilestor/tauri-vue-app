@@ -43,6 +43,26 @@ function resolveDisplayName(userInfo) {
   return '健康用户'
 }
 
+function resolveAvatarUrl(userInfo, defaultAvatarUrl = '') {
+  const candidates = [
+    userInfo?.avatar,
+    userInfo?.avatarUrl,
+    userInfo?.avatarURI,
+    userInfo?.headImg,
+    userInfo?.headImage,
+    userInfo?.profilePhoto,
+  ]
+
+  for (const candidate of candidates) {
+    const text = normalizeText(candidate)
+    if (text) {
+      return text
+    }
+  }
+
+  return normalizeText(defaultAvatarUrl)
+}
+
 function resolveAvatarText(displayName) {
   const value = normalizeText(displayName)
   return value ? value.slice(0, 1) : '健'
@@ -80,6 +100,7 @@ function createAnonymousState() {
     mode: 'anonymous',
     displayName: '未登录',
     subtitle: '登录后可同步账号权益',
+    avatarUrl: '',
     avatarText: '未',
     usage: {
       remaining: 0,
@@ -100,6 +121,7 @@ function createGuestState() {
     mode: 'guest',
     displayName: '临时访客',
     subtitle: '访客模式',
+    avatarUrl: '',
     avatarText: '访',
     usage: {
       remaining: 0,
@@ -115,16 +137,18 @@ function createGuestState() {
   }
 }
 
-function createAuthenticatedState(sessionState) {
+function createAuthenticatedState(sessionState, options = {}) {
   const userInfo = sessionState?.userInfo && typeof sessionState.userInfo === 'object'
     ? sessionState.userInfo
     : {}
   const displayName = resolveDisplayName(userInfo)
+  const avatarUrl = resolveAvatarUrl(userInfo, options.defaultAvatarUrl)
 
   return {
     mode: 'authenticated',
     displayName,
     subtitle: '在线',
+    avatarUrl,
     avatarText: resolveAvatarText(displayName),
     usage: resolveUsage(userInfo),
     showAuthActions: false,
@@ -139,9 +163,9 @@ function createAuthenticatedState(sessionState) {
   }
 }
 
-export function resolveSidebarUserState(sessionState = {}) {
+export function resolveSidebarUserState(sessionState = {}, options = {}) {
   if (sessionState.isAuthenticated) {
-    return createAuthenticatedState(sessionState)
+    return createAuthenticatedState(sessionState, options)
   }
 
   if (sessionState.isGuest) {

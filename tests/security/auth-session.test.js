@@ -53,12 +53,14 @@ test('密码登录会持久化会话并支持恢复', async () => {
   const state = authApi.getSessionState()
   assert.equal(state.accessToken, 'access-001')
   assert.equal(state.refreshToken, 'refresh-001')
+  assert.equal(state.userId, 1001)
   assert.equal(state.userInfo?.userId, 1001)
   assert.equal(state.isGuest, false)
 
   const restored = createAuthSessionStore(storage).getSessionState()
   assert.equal(restored.accessToken, 'access-001')
   assert.equal(restored.refreshToken, 'refresh-001')
+  assert.equal(restored.userId, 1001)
   assert.equal(restored.userInfo?.userName, 'demo-user')
 })
 
@@ -94,10 +96,42 @@ test('退出登录会清理认证凭证但保留设备身份', async () => {
   const state = authApi.getSessionState()
   assert.equal(state.accessToken, '')
   assert.equal(state.refreshToken, '')
+  assert.equal(state.userId, null)
   assert.equal(state.userInfo, null)
   assert.equal(state.isGuest, false)
   assert.equal(client.storage.getString(SECURITY_STORAGE_KEYS.clientId), 'desktop-tauri')
   assert.equal(client.storage.getString(SECURITY_STORAGE_KEYS.deviceId), 'desktop-keep')
+})
+
+test('登录响应仅返回 userId 时会写入会话 userId', async () => {
+  const storage = createMemoryStorage()
+  const client = createRequestClient({
+    storage,
+    fetchImpl: async (url) => {
+      const pathname = new URL(url).pathname
+      assert.equal(pathname, '/app-api/auth/login/password')
+      return jsonResponse({
+        code: 200,
+        data: {
+          accessToken: 'access-flat-userid',
+          refreshToken: 'refresh-flat-userid',
+          userId: 10003,
+        },
+      })
+    },
+    baseUrl: 'https://api.example.com',
+  })
+  const authApi = createAuthApi({ client, storage })
+
+  await authApi.loginByPassword({
+    userName: 'flat-user',
+    password: 'demo-pass',
+  })
+
+  const state = authApi.getSessionState()
+  assert.equal(state.userId, 10003)
+  assert.equal(state.userInfo?.userId, 10003)
+  assert.equal(client.storage.getString(SECURITY_STORAGE_KEYS.userId), '10003')
 })
 
 test('邮箱注册成功后进入登录态并标记试用提示', async () => {
@@ -134,6 +168,7 @@ test('邮箱注册成功后进入登录态并标记试用提示', async () => {
   const state = authApi.getSessionState()
   assert.equal(state.accessToken, 'access-register')
   assert.equal(state.refreshToken, 'refresh-register')
+  assert.equal(state.userId, 3003)
   assert.equal(state.isGuest, false)
   assert.equal(state.trialGiftPending, true)
 })
@@ -198,6 +233,7 @@ test('登录态接口遇到 401 时会自动刷新并重试一次', async () => 
   const state = authApi.getSessionState()
   assert.equal(state.accessToken, 'access-new')
   assert.equal(state.refreshToken, 'refresh-new')
+  assert.equal(state.userId, 4004)
 })
 
 test('刷新令牌失败时会回退到未登录态', async () => {
@@ -235,6 +271,7 @@ test('刷新令牌失败时会回退到未登录态', async () => {
   const state = authApi.getSessionState()
   assert.equal(state.accessToken, '')
   assert.equal(state.refreshToken, '')
+  assert.equal(state.userId, null)
   assert.equal(state.userInfo, null)
   assert.equal(state.isGuest, false)
 })
@@ -257,6 +294,7 @@ test('临时访客会写入访客态标记并清空登录凭证', () => {
   assert.equal(state.isGuest, true)
   assert.equal(state.accessToken, '')
   assert.equal(state.refreshToken, '')
+  assert.equal(state.userId, null)
 })
 
 

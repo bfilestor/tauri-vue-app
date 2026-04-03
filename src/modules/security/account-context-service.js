@@ -113,22 +113,86 @@ function resolveCallTimes(product, sku) {
   )
 }
 
+function resolvePriceYuan(product, sku) {
+  const directPrice = toNumber(
+    sku?.salePrice
+    ?? sku?.price
+    ?? product?.salePrice
+    ?? product?.price,
+  )
+  if (directPrice != null) {
+    return directPrice
+  }
+
+  const priceFen = toNumber(
+    sku?.priceFen
+    ?? product?.priceFen,
+  )
+  if (priceFen != null) {
+    return Math.round((priceFen / 100) * 100) / 100
+  }
+
+  return 0
+}
+
 function normalizeProductItem(product) {
   const sku = pickDefaultSku(product?.skuList)
+  const online = product?.online !== false
+  const enabled = sku?.enabled !== false
   const normalized = {
     productId: product?.productId ?? product?.id ?? null,
     productName: normalizeText(product?.productName || product?.name || ''),
+    skuName: normalizeText(sku?.skuName || sku?.name || ''),
     skuId: sku?.skuId ?? sku?.id ?? product?.skuId ?? null,
-    price: toNumber(sku?.salePrice ?? sku?.price ?? product?.salePrice ?? product?.price ?? 0) ?? 0,
+    price: resolvePriceYuan(product, sku),
     callTimes: resolveCallTimes(product, sku),
+    online,
+    enabled,
+    purchasable: online && enabled && Boolean(sku?.skuId ?? sku?.id ?? product?.skuId),
     raw: product,
   }
 
   return normalized
 }
 
+function sortProductsForDisplay(products) {
+  return [...products].sort((left, right) => {
+    const leftCalls = toNumber(left?.callTimes)
+    const rightCalls = toNumber(right?.callTimes)
+    if (leftCalls != null && rightCalls != null && leftCalls !== rightCalls) {
+      return leftCalls - rightCalls
+    }
+    if (leftCalls != null && rightCalls == null) {
+      return -1
+    }
+    if (leftCalls == null && rightCalls != null) {
+      return 1
+    }
+
+    const leftId = toNumber(left?.productId) ?? Number.MAX_SAFE_INTEGER
+    const rightId = toNumber(right?.productId) ?? Number.MAX_SAFE_INTEGER
+    return leftId - rightId
+  })
+}
+
+function createDynamicProductCard(product, index) {
+  const fallbackCalls = Number.MAX_SAFE_INTEGER - index
+  const resolvedCalls = toNumber(product?.callTimes)
+  const targetCalls = resolvedCalls != null ? resolvedCalls : fallbackCalls
+  const suffix = resolvedCalls != null ? `${resolvedCalls} 次` : '套餐'
+  const name = normalizeText(product?.productName)
+
+  return {
+    targetCalls,
+    title: name || suffix,
+    missing: false,
+    purchasable: Boolean(product?.purchasable),
+    product,
+  }
+}
+
 function mapProductsToPackageCards(products) {
-  return PACKAGE_CARD_CALLS.map((targetCalls) => {
+  const fixedCards = PACKAGE_CARD_CALLS.map((targetCalls) => {
     const matched = products.find((item) => item.callTimes === targetCalls)
     if (!matched) {
       return createInitialPackageCard(targetCalls)
@@ -138,10 +202,20 @@ function mapProductsToPackageCards(products) {
       targetCalls,
       title: `${targetCalls} 次`,
       missing: false,
-      purchasable: Boolean(matched.skuId),
+      purchasable: Boolean(matched.purchasable),
       product: matched,
     }
   })
+
+  const fixedMatchedCount = fixedCards.filter((item) => !item.missing).length
+  if (fixedMatchedCount > 0) {
+    return fixedCards
+  }
+
+  const dynamicCards = sortProductsForDisplay(products)
+    .map((item, index) => createDynamicProductCard(item, index))
+
+  return dynamicCards.length > 0 ? dynamicCards : fixedCards
 }
 
 function resolveDefaultMember(members) {
@@ -189,10 +263,10 @@ export function createAccountContextService({
 
   async function fetchAuthedContext() {
     const [profile, balance, wallet, membersResp] = await Promise.all([
-      client.get('/app-api/account/profile', {}, { requiresAuth: true }),
-      client.get('/app-api/account/balance', {}, { requiresAuth: true }),
-      client.get('/app-api/wallet', {}, { requiresAuth: true }),
-      client.get('/app-api/family-members', {}, { requiresAuth: true }),
+      client.get('/app-api/account/profile', {}, { requiresAuth: true, includeUserId: true }),
+      client.get('/app-api/account/balance', {}, { requiresAuth: true, includeUserId: true }),
+      client.get('/app-api/wallet', {}, { requiresAuth: true, includeUserId: true }),
+      client.get('/app-api/family-members', {}, { requiresAuth: true, includeUserId: true }),
     ])
 
     const members = toArray(membersResp)

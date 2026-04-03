@@ -11,6 +11,7 @@ export const SECURITY_STORAGE_KEYS = {
   lastActivationError: 'health.security.lastActivationError',
   accessToken: 'health.auth.accessToken',
   refreshToken: 'health.auth.refreshToken',
+  userId: 'health.auth.userId',
   userInfo: 'health.auth.userInfo',
   guestMode: 'health.auth.guestMode',
   trialGiftPending: 'health.auth.trialGiftPending',

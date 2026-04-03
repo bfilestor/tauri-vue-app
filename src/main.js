@@ -8,8 +8,10 @@ import tray_init from "./tray.js"
 import { bootstrapClientSecurity } from './modules/security/index.js'
 
 tray_init()
+const useDevProxy = import.meta.env.DEV && import.meta.env.VITE_USE_DEV_PROXY !== 'false'
 void bootstrapClientSecurity({
-  baseUrl: import.meta.env.VITE_API_BASE_URL || '',
+  // In development, prefer Vite proxy to avoid browser CORS preflight failures.
+  baseUrl: useDevProxy ? '' : (import.meta.env.VITE_API_BASE_URL || ''),
   appVersion: import.meta.env.VITE_APP_VERSION || '1.0.2',
   activationSecretProof: import.meta.env.VITE_DEVICE_SECRET_PROOF || 'init-secret-proof',
 })

@@ -59,6 +59,7 @@ export function createOrderService({ client } = {}) {
       {},
       {
         requiresAuth: true,
+        includeUserId: true,
         idempotencyKey,
       },
     )
@@ -70,12 +71,12 @@ export function createOrderService({ client } = {}) {
     const channel = normalizePayChannel(payChannel)
     const primaryPath = buildQrcodePath(orderNo, channel)
     try {
-      const response = await client.get(primaryPath, {}, { requiresAuth: true })
+      const response = await client.get(primaryPath, {}, { requiresAuth: true, includeUserId: true })
       return normalizeQrcodeResponse(response, channel)
     } catch (error) {
       // Some backends infer pay channel from order and may reject query args.
       const fallbackPath = `/app-api/orders/${encodeURIComponent(orderNo)}/pay-qrcode`
-      const response = await client.get(fallbackPath, {}, { requiresAuth: true })
+      const response = await client.get(fallbackPath, {}, { requiresAuth: true, includeUserId: true })
       return normalizeQrcodeResponse(response, channel)
     }
   }
@@ -84,7 +85,7 @@ export function createOrderService({ client } = {}) {
     const response = await client.get(
       `/app-api/orders/${encodeURIComponent(orderNo)}/status`,
       {},
-      { requiresAuth: true },
+      { requiresAuth: true, includeUserId: true },
     )
 
     return normalizeOrderStatusResponse(response)
@@ -95,7 +96,7 @@ export function createOrderService({ client } = {}) {
       `/app-api/orders/${encodeURIComponent(orderNo)}/cancel`,
       undefined,
       {},
-      { requiresAuth: true, skipAuthRefresh: false },
+      { requiresAuth: true, includeUserId: true, skipAuthRefresh: false },
     )
   }
 

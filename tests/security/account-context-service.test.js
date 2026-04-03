@@ -79,6 +79,9 @@ test('登录后自动加载账户上下文并写入统一缓存', async () => {
     '/app-api/products',
     '/app-api/wallet',
   ])
+
+  const authedRequests = client.requests.filter((item) => item.path !== '/app-api/products')
+  assert.equal(authedRequests.every((item) => item.meta.includeUserId === true), true)
 })
 
 test('访客态只加载公开套餐，不请求登录态余额接口', async () => {
@@ -158,4 +161,50 @@ test('商品列表缺少档位时对应卡片保持缺失态，不伪造 SKU', a
   assert.equal(card100.purchasable, false)
   assert.equal(card500.missing, false)
   assert.equal(card500.product?.skuId, 103)
+})
+
+test('后端返回非固定档位时按真实商品动态展示并兼容 priceFen', async () => {
+  const client = createClientStub()
+  client.when('/app-api/products', () => ([
+    {
+      productId: 20001,
+      productName: '初级AI次数包',
+      online: true,
+      skuList: [
+        { skuId: 21001, skuName: '初级包（10次）', priceFen: 1000, times: 10, enabled: true },
+      ],
+    },
+    {
+      productId: 20002,
+      productName: '中级AI次数包',
+      online: true,
+      skuList: [
+        { skuId: 21002, skuName: '中级包（80次）', priceFen: 5000, times: 80, enabled: true },
+      ],
+    },
+    {
+      productId: 20003,
+      productName: '高级AI次数包',
+      online: true,
+      skuList: [
+        { skuId: 21003, skuName: '高级包（200次）', priceFen: 10000, times: 200, enabled: true },
+      ],
+    },
+  ]))
+
+  const service = createAccountContextService({
+    client,
+    authApi: createAuthApiStub({ isGuest: true, isAuthenticated: false }),
+  })
+
+  const state = await service.refreshForCurrentSession({ force: true })
+
+  assert.equal(state.packageCards.length, 3)
+  assert.deepEqual(state.packageCards.map((item) => item.targetCalls), [10, 80, 200])
+  assert.equal(state.packageCards[0].title, '初级AI次数包')
+  assert.equal(state.packageCards[0].product?.price, 10)
+  assert.equal(state.packageCards[1].product?.price, 50)
+  assert.equal(state.packageCards[2].product?.price, 100)
+  assert.equal(state.packageCards.every((item) => item.missing === false), true)
+  assert.equal(state.packageCards.every((item) => item.purchasable === true), true)
 })

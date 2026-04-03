@@ -41,6 +41,7 @@ test('usage precheck 默认使用 CHAT 并兼容 canUse 返回字段', async () 
     idempotencyKey: 'idem-chat-001',
   })
   assert.equal(client.calls[0].meta.requiresAuth, true)
+  assert.equal(client.calls[0].meta.includeUserId, true)
   assert.equal(client.calls[0].meta.idempotent, true)
   assert.equal(result.allowed, true)
   assert.equal(result.availableCredits, 9)

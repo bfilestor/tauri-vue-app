@@ -1,12 +1,32 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 import path from 'path'
 
 const host = process.env.TAURI_DEV_HOST;
 
+function resolveProxyTarget(env) {
+  if (env.VITE_API_PROXY_TARGET) {
+    return env.VITE_API_PROXY_TARGET
+  }
+
+  if (!env.VITE_API_BASE_URL) {
+    return ''
+  }
+
+  try {
+    return new URL(env.VITE_API_BASE_URL).origin
+  } catch {
+    return ''
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const apiProxyTarget = resolveProxyTarget(env)
+
+  return ({
   plugins: [vue(), tailwindcss()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -18,6 +38,15 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    proxy: apiProxyTarget
+      ? {
+        '/app-api': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          secure: false
+        },
+      }
+      : undefined,
     hmr: host
       ? {
         protocol: "ws",
@@ -49,4 +78,5 @@ export default defineConfig(async () => ({
     // 在 debug 构建中生成 sourcemap
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
-}));
+  })
+});

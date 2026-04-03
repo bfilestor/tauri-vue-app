@@ -33,7 +33,13 @@
         <div v-if="userAreaState.mode === 'authenticated'" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full bg-[#2b8cee]/15 flex items-center justify-center text-[#2b8cee] text-sm font-bold">
-              {{ userAreaState.avatarText }}
+              <img
+                v-if="userAreaState.avatarUrl"
+                :src="userAreaState.avatarUrl"
+                alt="用户头像"
+                class="w-full h-full rounded-full object-cover"
+              />
+              <span v-else>{{ userAreaState.avatarText }}</span>
             </div>
             <div class="min-w-0">
               <p class="text-sm font-bold text-slate-800 truncate">{{ userAreaState.displayName }}</p>
@@ -192,6 +198,7 @@ import {
   useAccountContext,
   usePurchaseDialog,
 } from '@/modules/security/index.js'
+import defaultUserAvatar from '@/assets/app.png'
 
 const route = useRoute()
 const appWindow = getCurrentWindow()
@@ -209,14 +216,21 @@ const usageFeedback = computed(() => {
   }
   return usage
 })
-const userAreaState = computed(() => resolveSidebarUserState({
-  ...sessionState.value,
-  userInfo: {
+const userAreaState = computed(() => {
+  const mergedUserInfo = {
     ...(sessionState.value?.userInfo || {}),
+    ...(accountContextState.profile || {}),
     remainingTimes: usageFeedback.value.remaining,
     totalTimes: usageFeedback.value.total,
-  },
-}))
+  }
+
+  return resolveSidebarUserState({
+    ...sessionState.value,
+    userInfo: mergedUserInfo,
+  }, {
+    defaultAvatarUrl: defaultUserAvatar,
+  })
+})
 const accountMenuEntries = computed(() => buildAccountMenuEntries(userAreaState.value.mode === 'authenticated'))
 const showHeaderAuthButtons = computed(() => userAreaState.value.mode !== 'authenticated')
 

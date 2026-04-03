@@ -15,11 +15,17 @@ function normalizeAuthPayload(payload) {
     throw createAuthError('Missing auth token field in response.', 'AUTH_TOKEN_MISSING')
   }
 
+  const userId = payload.userId ?? payload.userInfo?.userId ?? null
+  const userInfo = payload.userInfo && typeof payload.userInfo === 'object'
+    ? payload.userInfo
+    : (userId != null ? { userId } : null)
+
   return {
     accessToken: payload.accessToken,
     refreshToken: payload.refreshToken,
     expireIn: payload.expireIn,
-    userInfo: payload.userInfo,
+    userId,
+    userInfo,
   }
 }
 

@@ -116,6 +116,182 @@ function normalizeResponseError(response, payload) {
   return error
 }
 
+function headersToObject(headers) {
+  const result = {}
+
+  if (!headers || typeof headers.forEach !== 'function') {
+    return result
+  }
+
+  headers.forEach((value, key) => {
+    result[key] = value
+  })
+
+  return result
+}
+
+function appendFieldValue(target, key, value) {
+  if (key in target) {
+    target[key] = Array.isArray(target[key]) ? [...target[key], value] : [target[key], value]
+    return
+  }
+
+  target[key] = value
+}
+
+function normalizeFormDataValue(value) {
+  if (typeof File !== 'undefined' && value instanceof File) {
+    return `[File name=${value.name} size=${value.size} type=${value.type || 'unknown'}]`
+  }
+
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    return `[Blob size=${value.size} type=${value.type || 'unknown'}]`
+  }
+
+  return value
+}
+
+function searchParamsToObject(searchParams) {
+  const result = {}
+
+  if (!searchParams || typeof searchParams.forEach !== 'function') {
+    return result
+  }
+
+  searchParams.forEach((value, key) => {
+    appendFieldValue(result, key, value)
+  })
+
+  return result
+}
+
+function parseQueryParamsFromUrl(requestUrl) {
+  try {
+    return searchParamsToObject(new URL(requestUrl, 'http://request.log').searchParams)
+  } catch {
+    return {}
+  }
+}
+
+function parseStringAsJsonIfPossible(rawText) {
+  if (typeof rawText !== 'string') {
+    return rawText
+  }
+
+  const trimmed = rawText.trim()
+  if (!trimmed) {
+    return rawText
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return rawText
+  }
+}
+
+function normalizeUserId(value) {
+  if (value == null || value === '') {
+    return null
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : trimmed
+  }
+
+  return null
+}
+
+function isAbsoluteRequestPath(requestPath) {
+  return typeof requestPath === 'string'
+    && (requestPath.startsWith('http://') || requestPath.startsWith('https://'))
+}
+
+function readStoredUserId(storage) {
+  const directUserId = normalizeUserId(storage.getString(SECURITY_STORAGE_KEYS.userId))
+  if (directUserId != null) {
+    return directUserId
+  }
+
+  const userInfo = parseStringAsJsonIfPossible(storage.getString(SECURITY_STORAGE_KEYS.userInfo))
+  return normalizeUserId(userInfo?.userId)
+}
+
+function appendUserIdToRequestPath(requestPath, userId) {
+  if (userId == null || requestPath == null || requestPath === '') {
+    return requestPath
+  }
+
+  const absolute = isAbsoluteRequestPath(requestPath)
+  const url = absolute
+    ? new URL(requestPath)
+    : new URL(requestPath, 'http://request.user')
+
+  if (!url.searchParams.has('userId')) {
+    url.searchParams.set('userId', String(userId))
+  }
+
+  if (absolute) {
+    return url.toString()
+  }
+
+  const normalizedPath = `${url.pathname}${url.search}${url.hash}`
+  return requestPath.startsWith('/') ? normalizedPath : normalizedPath.replace(/^\//, '')
+}
+
+function normalizeRequestPayloadForLog(originalBody, bodyString) {
+  if (originalBody == null) {
+    if (typeof bodyString === 'string' && bodyString.length > 0) {
+      return parseStringAsJsonIfPossible(bodyString)
+    }
+    return null
+  }
+
+  if (originalBody instanceof FormData) {
+    const result = {}
+    originalBody.forEach((value, key) => {
+      appendFieldValue(result, key, normalizeFormDataValue(value))
+    })
+    return result
+  }
+
+  if (originalBody instanceof URLSearchParams) {
+    return searchParamsToObject(originalBody)
+  }
+
+  if (typeof originalBody === 'string') {
+    return parseStringAsJsonIfPossible(originalBody)
+  }
+
+  if (typeof originalBody === 'object') {
+    return originalBody
+  }
+
+  return originalBody
+}
+
+function getDefinedConfigPatch(nextConfig = {}) {
+  const patch = {}
+
+  Object.entries(nextConfig).forEach(([key, value]) => {
+    if (value !== undefined && key !== 'runtimeInfo') {
+      patch[key] = value
+    }
+  })
+
+  return patch
+}
+
 export function createRequestClient(initialConfig = {}) {
   const storage = createStorageAdapter(initialConfig.storage)
   const config = {
@@ -144,10 +320,31 @@ export function createRequestClient(initialConfig = {}) {
       }
     }
 
+    const definedConfigPatch = getDefinedConfigPatch(nextConfig)
+
     Object.assign(config, {
-      ...nextConfig,
+      ...definedConfigPatch,
       runtimeInfo: config.runtimeInfo,
     })
+  }
+
+  function resolveFetchImpl() {
+    if (typeof config.fetchImpl === 'function') {
+      return config.fetchImpl
+    }
+
+    if (typeof globalThis.fetch === 'function') {
+      return globalThis.fetch.bind(globalThis)
+    }
+
+    return undefined
+  }
+
+  function createMissingFetchError(extra = {}) {
+    const error = new Error('Missing fetch implementation.')
+    error.code = 'FETCH_IMPL_MISSING'
+    console.error('[request-client] Request aborted: fetch implementation missing', extra)
+    return error
   }
 
   async function initialize(runtimeInfo = {}) {
@@ -155,9 +352,16 @@ export function createRequestClient(initialConfig = {}) {
       configure({ runtimeInfo })
     }
 
+    const fetchImpl = resolveFetchImpl()
+    if (typeof fetchImpl !== 'function') {
+      throw createMissingFetchError({
+        stage: 'initialize',
+      })
+    }
+
     return ensureDeviceReady({
       storage,
-      fetchImpl: config.fetchImpl,
+      fetchImpl,
       baseUrl: config.baseUrl,
       runtimeInfo: config.runtimeInfo,
       now: config.now,
@@ -170,14 +374,21 @@ export function createRequestClient(initialConfig = {}) {
   }
 
   async function executeRequest(requestPath, init = {}, meta = {}, context = { retried: false }) {
-    const method = (init.method || 'GET').toUpperCase()
-    const fetchImpl = config.fetchImpl
-
-    if (typeof fetchImpl !== 'function') {
-      throw new Error('Missing fetch implementation.')
+    const includeUserId = meta.includeUserId === true
+    const currentUserId = includeUserId ? readStoredUserId(storage) : null
+    if (includeUserId && currentUserId == null) {
+      const error = new Error('Missing user id.')
+      error.code = 'USER_ID_MISSING'
+      throw error
     }
 
-    const highValue = meta.highValue ?? matchHighValueRoute(requestPath)
+    const effectiveRequestPath = includeUserId
+      ? appendUserIdToRequestPath(requestPath, currentUserId)
+      : requestPath
+    const method = (init.method || 'GET').toUpperCase()
+    const fetchImpl = resolveFetchImpl()
+
+    const highValue = meta.highValue ?? matchHighValueRoute(effectiveRequestPath)
     if (highValue) {
       await initialize()
     }
@@ -197,6 +408,7 @@ export function createRequestClient(initialConfig = {}) {
     }
 
     let body = init.body
+    const originalBody = init.body
     let bodyString = ''
 
     if (isJsonLikeBody(body)) {
@@ -228,7 +440,7 @@ export function createRequestClient(initialConfig = {}) {
       const { signature } = await signRequest({
         secret: state.deviceSecret,
         method,
-        requestPath,
+        requestPath: effectiveRequestPath,
         body: bodyString,
         timestamp,
         nonce,
@@ -248,13 +460,67 @@ export function createRequestClient(initialConfig = {}) {
       throw error
     }
 
-    const response = await fetchImpl(buildAbsoluteUrl(config.baseUrl, requestPath), {
-      ...init,
+    const requestUrl = buildAbsoluteUrl(config.baseUrl, effectiveRequestPath)
+    const requestPayload = normalizeRequestPayloadForLog(originalBody, bodyString)
+    const requestHeaders = headersToObject(headers)
+    const requestQuery = parseQueryParamsFromUrl(requestUrl)
+
+    if (typeof fetchImpl !== 'function') {
+      throw createMissingFetchError({
+        stage: 'executeRequest',
+        url: requestUrl,
+        method,
+        headers: requestHeaders,
+        query: requestQuery,
+        params: requestPayload,
+      })
+    }
+
+    console.info('[request-client] Request ->', {
+      url: requestUrl,
       method,
-      headers,
-      body,
+      headers: requestHeaders,
+      query: requestQuery,
+      params: requestPayload,
+      meta,
     })
-    const payload = await readResponseBody(response)
+
+    let response
+    let payload
+
+    try {
+      response = await fetchImpl(requestUrl, {
+        ...init,
+        method,
+        headers,
+        body,
+      })
+      payload = await readResponseBody(response)
+    } catch (error) {
+      console.error('[request-client] Request exception <-', {
+        url: requestUrl,
+        method,
+        headers: requestHeaders,
+        query: requestQuery,
+        params: requestPayload,
+        error: {
+          name: error?.name,
+          code: error?.code,
+          message: error?.message,
+        },
+      })
+      throw error
+    }
+
+    console.info('[request-client] Response <-', {
+      url: requestUrl,
+      method,
+      status: response.status,
+      ok: response.ok,
+      headers: headersToObject(response.headers),
+      data: payload,
+    })
+
     const hasBusinessError = payload && typeof payload === 'object' && 'code' in payload && payload.code !== 200
 
     if (!response.ok || hasBusinessError) {
@@ -265,7 +531,7 @@ export function createRequestClient(initialConfig = {}) {
         response,
         payload,
         error,
-        requestPath,
+        requestPath: effectiveRequestPath,
         meta,
         retried: context.retried,
       })) {

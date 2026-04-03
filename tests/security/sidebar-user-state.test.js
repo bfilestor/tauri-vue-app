@@ -84,3 +84,20 @@ test('用户信息缺失时使用兜底昵称与头像首字母', () => {
   assert.equal(state.displayName, '健康用户')
   assert.equal(state.avatarText, '健')
 })
+
+test('优先使用 profile 昵称，头像为空时使用默认头像', () => {
+  const state = resolveSidebarUserState({
+    isAuthenticated: true,
+    isGuest: false,
+    userInfo: {
+      nickname: 'U10003',
+      avatar: '',
+    },
+  }, {
+    defaultAvatarUrl: '/assets/default-avatar.png',
+  })
+
+  assert.equal(state.displayName, 'U10003')
+  assert.equal(state.avatarUrl, '/assets/default-avatar.png')
+  assert.equal(state.avatarText, 'U')
+})

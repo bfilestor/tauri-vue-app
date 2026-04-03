@@ -6,7 +6,25 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Menu } from '@tauri-apps/api/menu';
 
+const MAIN_TRAY_ID = 'main-tray'
+let trayRef = null
+let initPromise = null
+
 export default async function init_tray() {
+    if (trayRef) {
+        return trayRef
+    }
+
+    if (initPromise) {
+        return initPromise
+    }
+
+    initPromise = (async () => {
+    const existingTray = await TrayIcon.getById(MAIN_TRAY_ID)
+    if (existingTray) {
+        trayRef = existingTray
+        return existingTray
+    }
 
     const onTrayMenuClick =  async (itemId) => {
         switch(itemId){
@@ -43,6 +61,7 @@ export default async function init_tray() {
     });
 
     const options = {
+        id: MAIN_TRAY_ID,
         icon: await defaultWindowIcon(),
         menu,
         menuOnLeftClick: false,
@@ -60,4 +79,12 @@ export default async function init_tray() {
     };
 
     const tray = await TrayIcon.new(options)
+    trayRef = tray
+    return tray
+    })()
+      .finally(() => {
+        initPromise = null
+      })
+
+    return initPromise
 }

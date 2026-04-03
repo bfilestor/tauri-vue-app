@@ -57,6 +57,7 @@ export function createUsageService({
         {},
         {
           requiresAuth: true,
+          includeUserId: true,
           idempotent: true,
           idempotencyKey,
         },
