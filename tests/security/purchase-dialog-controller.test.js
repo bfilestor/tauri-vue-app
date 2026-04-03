@@ -10,11 +10,25 @@ function createOrderServiceStub() {
   const calls = {
     createOrder: [],
     fetchPayQrcode: [],
+    fetchOrderStatus: [],
+    cancelOrder: [],
   }
 
   const responses = {
     createOrder: null,
     fetchPayQrcode: null,
+    fetchOrderStatus: null,
+    cancelOrder: null,
+  }
+
+  function shiftResponse(value, fallback) {
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return fallback
+      }
+      return value.shift()
+    }
+    return value ?? fallback
   }
 
   return {
@@ -41,6 +55,25 @@ function createOrderServiceStub() {
         qrcodeUrl: `https://pay.example.com/${payChannel}/qr.png`,
         expireTime: '2099-01-01T00:00:00Z',
       }
+    },
+    async fetchOrderStatus(orderNo) {
+      calls.fetchOrderStatus.push({ orderNo })
+      const value = shiftResponse(responses.fetchOrderStatus, {
+        orderStatus: 'CREATED',
+        payStatus: 'UNPAID',
+      })
+      if (value instanceof Error) {
+        throw value
+      }
+      return value
+    },
+    async cancelOrder(orderNo) {
+      calls.cancelOrder.push({ orderNo })
+      const value = shiftResponse(responses.cancelOrder, { success: true })
+      if (value instanceof Error) {
+        throw value
+      }
+      return value
     },
   }
 }
@@ -181,4 +214,85 @@ test('二维码过期时标记过期并支持刷新', async () => {
   assert.equal(refreshed.ok, true)
   assert.equal(state.qrcodeExpired, false)
   assert.equal(state.qrcodeUrl, 'https://pay.example.com/refreshed.png')
+})
+
+test('轮询检测到支付成功后进入 success 并触发到账回调', async () => {
+  const state = createInitialPurchaseDialogState()
+  const orderService = createOrderServiceStub()
+  const callbacks = []
+  const controller = createPurchaseDialogController({
+    state,
+    orderService,
+    onPaymentSuccess: async (payload) => {
+      callbacks.push(payload)
+    },
+  })
+
+  controller.open({ packageCards: createPackageCards(), preferredCalls: 20 })
+  await controller.createOrder()
+  orderService.responses.fetchOrderStatus = [
+    { orderStatus: 'CREATED', payStatus: 'UNPAID' },
+    { orderStatus: 'PAID', payStatus: 'SUCCESS' },
+  ]
+
+  await controller.pollOrderStatusOnce()
+  assert.equal(state.pollingStatus, 'polling')
+  await controller.pollOrderStatusOnce()
+
+  assert.equal(state.pollingStatus, 'success')
+  assert.equal(state.pollingActive, false)
+  assert.equal(callbacks.length, 1)
+  assert.equal(callbacks[0].orderNo, 'ORDER-001')
+})
+
+test('轮询达到上限后进入 timeout 状态', async () => {
+  const state = createInitialPurchaseDialogState()
+  const orderService = createOrderServiceStub()
+  const controller = createPurchaseDialogController({
+    state,
+    orderService,
+  })
+
+  controller.open({ packageCards: createPackageCards(), preferredCalls: 20 })
+  await controller.createOrder()
+  orderService.responses.fetchOrderStatus = [
+    { orderStatus: 'CREATED', payStatus: 'UNPAID' },
+    { orderStatus: 'CREATED', payStatus: 'UNPAID' },
+    { orderStatus: 'CREATED', payStatus: 'UNPAID' },
+  ]
+  controller.startPolling({ maxAttempts: 2, intervalMs: 2000 })
+
+  await controller.pollOrderStatusOnce()
+  await controller.pollOrderStatusOnce()
+
+  assert.equal(state.pollingStatus, 'timeout')
+  assert.equal(state.pollingActive, false)
+  assert.match(state.pollingMessage, /超时/)
+})
+
+test('轮询异常时进入 error，用户可取消支付轮询', async () => {
+  const state = createInitialPurchaseDialogState()
+  const orderService = createOrderServiceStub()
+  const controller = createPurchaseDialogController({
+    state,
+    orderService,
+  })
+
+  controller.open({ packageCards: createPackageCards(), preferredCalls: 20 })
+  await controller.createOrder()
+  orderService.responses.fetchOrderStatus = new Error('poll failed')
+  controller.startPolling({ maxAttempts: 5, intervalMs: 2000 })
+
+  await controller.pollOrderStatusOnce()
+
+  assert.equal(state.pollingStatus, 'error')
+  assert.equal(state.pollingActive, false)
+  assert.match(state.pollingMessage, /poll failed/)
+
+  controller.startPolling({ maxAttempts: 5, intervalMs: 2000 })
+  const cancelled = await controller.cancelPayment()
+  assert.equal(cancelled.ok, true)
+  assert.equal(state.pollingStatus, 'cancelled')
+  assert.equal(state.pollingActive, false)
+  assert.equal(orderService.calls.cancelOrder.length, 1)
 })

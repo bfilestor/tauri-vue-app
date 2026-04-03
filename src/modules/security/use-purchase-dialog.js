@@ -16,6 +16,10 @@ const controller = createPurchaseDialogController({
   orderService: createOrderService({
     client: appRequestClient,
   }),
+  onPaymentSuccess: async () => {
+    await refreshAccountContext({ force: true })
+    controller.close()
+  },
 })
 
 async function openPurchaseDialog({ preferredCalls = null, reason = 'user_click', forceRefresh = false } = {}) {
@@ -35,13 +39,40 @@ async function openPurchaseDialog({ preferredCalls = null, reason = 'user_click'
 }
 
 export function usePurchaseDialog() {
+  async function createOrderAndStartPolling() {
+    const result = await controller.createOrder()
+    if (!result.ok) {
+      return result
+    }
+
+    controller.startPolling({
+      maxAttempts: 30,
+      intervalMs: 3000,
+    })
+    await controller.pollOrderStatusOnce()
+    return result
+  }
+
+  async function resumePolling() {
+    const started = controller.startPolling({
+      maxAttempts: Math.max(state.pollingMaxAttempts || 30, 1),
+      intervalMs: Math.max(state.pollingIntervalMs || 3000, 500),
+    })
+    if (!started.ok) {
+      return started
+    }
+    return controller.pollOrderStatusOnce()
+  }
+
   return {
     state: readonly(state),
     openPurchaseDialog,
     closePurchaseDialog: controller.close,
     selectPackageByCalls: controller.selectPackageByCalls,
-    createOrder: controller.createOrder,
+    createOrder: createOrderAndStartPolling,
     switchPayChannel: controller.switchPayChannel,
     refreshQrcode: controller.refreshQrcode,
+    cancelPayment: controller.cancelPayment,
+    resumePolling,
   }
 }

@@ -35,6 +35,14 @@ function normalizeQrcodeResponse(response, payChannel) {
   }
 }
 
+function normalizeOrderStatusResponse(response) {
+  return {
+    orderStatus: response?.orderStatus || '',
+    payStatus: response?.payStatus || '',
+    raw: response || null,
+  }
+}
+
 export function createOrderService({ client } = {}) {
   if (!client || typeof client.post !== 'function' || typeof client.get !== 'function') {
     throw new Error('createOrderService requires request client with get/post.')
@@ -72,8 +80,29 @@ export function createOrderService({ client } = {}) {
     }
   }
 
+  async function fetchOrderStatus(orderNo) {
+    const response = await client.get(
+      `/app-api/orders/${encodeURIComponent(orderNo)}/status`,
+      {},
+      { requiresAuth: true },
+    )
+
+    return normalizeOrderStatusResponse(response)
+  }
+
+  async function cancelOrder(orderNo) {
+    return client.post(
+      `/app-api/orders/${encodeURIComponent(orderNo)}/cancel`,
+      undefined,
+      {},
+      { requiresAuth: true, skipAuthRefresh: false },
+    )
+  }
+
   return {
     createOrder,
     fetchPayQrcode,
+    fetchOrderStatus,
+    cancelOrder,
   }
 }

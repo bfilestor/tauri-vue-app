@@ -251,10 +251,29 @@ const refreshAccountContextWithFeedback = async (options = {}) => {
   }
 }
 
-const handleAuthSuccess = () => {
+const consumeTrialGiftPending = async ({ showToast = false } = {}) => {
+  const current = authApi.getSessionState()
+  if (!current.trialGiftPending) {
+    return false
+  }
+
+  authApi.markTrialGiftConsumed()
+  refreshSessionState()
+  if (showToast) {
+    ElMessage.success('已赠送 1 次免费体验，余额已自动刷新')
+  }
+  await refreshAccountContextWithFeedback({ force: true })
+  return true
+}
+
+const handleAuthSuccess = async (payload = {}) => {
   authDialogVisible.value = false
   refreshSessionState()
-  void refreshAccountContextWithFeedback({ force: true })
+  if (payload.trialGiftPending || sessionState.value.trialGiftPending) {
+    await consumeTrialGiftPending({ showToast: false })
+    return
+  }
+  await refreshAccountContextWithFeedback({ force: true })
 }
 
 const handleGuestEntered = () => {
@@ -302,9 +321,12 @@ const handleQuit = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   refreshSessionState()
-  void refreshAccountContextWithFeedback({ force: true })
+  const handledTrialGift = await consumeTrialGiftPending({ showToast: true })
+  if (!handledTrialGift) {
+    await refreshAccountContextWithFeedback({ force: true })
+  }
 })
 </script>
 

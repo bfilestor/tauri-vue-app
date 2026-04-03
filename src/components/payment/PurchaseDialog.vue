@@ -65,6 +65,9 @@
           二维码有效期至：{{ state.qrcodeExpireTime }}
           <span v-if="state.qrcodeExpired" class="expire-badge">已过期</span>
         </p>
+        <p v-if="state.pollingMessage" class="polling-text">
+          {{ state.pollingMessage }}
+        </p>
         <p v-if="state.errorMessage" class="error-text">{{ state.errorMessage }}</p>
       </div>
     </div>
@@ -72,6 +75,20 @@
     <template #footer>
       <div class="purchase-footer">
         <el-button @click="closePurchaseDialog">关闭</el-button>
+        <el-button
+          v-if="state.orderNo && !state.pollingActive && ['timeout', 'error', 'cancelled'].includes(state.pollingStatus)"
+          plain
+          @click="resumePolling"
+        >
+          继续查询
+        </el-button>
+        <el-button
+          v-if="state.orderNo && state.pollingActive"
+          plain
+          @click="cancelPayment"
+        >
+          取消支付
+        </el-button>
         <el-button
           v-if="state.orderNo"
           plain
@@ -93,6 +110,7 @@
 </template>
 
 <script setup>
+import { watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usePurchaseDialog } from '@/modules/security/index.js'
 
@@ -103,6 +121,8 @@ const {
   createOrder: createOrderAction,
   switchPayChannel: switchPayChannelAction,
   refreshQrcode: refreshQrcodeAction,
+  cancelPayment: cancelPaymentAction,
+  resumePolling: resumePollingAction,
 } = usePurchaseDialog()
 
 function handleSelectCard(card) {
@@ -125,7 +145,7 @@ async function createOrder() {
     ElMessage.error(state.errorMessage || '创建订单失败')
     return
   }
-  ElMessage.success('订单已创建，请扫码支付')
+  ElMessage.success('订单已创建，正在轮询支付状态')
 }
 
 async function refreshQrcode() {
@@ -136,6 +156,39 @@ async function refreshQrcode() {
   }
   ElMessage.success('二维码已刷新')
 }
+
+async function cancelPayment() {
+  const result = await cancelPaymentAction()
+  if (!result.ok) {
+    ElMessage.error(state.errorMessage || '取消支付失败')
+    return
+  }
+  ElMessage.info('已取消支付轮询')
+}
+
+async function resumePolling() {
+  const result = await resumePollingAction()
+  if (!result.ok) {
+    ElMessage.error(state.errorMessage || state.pollingMessage || '继续查询失败')
+    return
+  }
+  ElMessage.info('已恢复支付状态查询')
+}
+
+watch(
+  () => state.pollingStatus,
+  (status) => {
+    if (status === 'success') {
+      ElMessage.success('支付成功，次数已到账')
+    } else if (status === 'timeout') {
+      ElMessage.warning('支付状态查询超时，可继续查询或稍后重试')
+    } else if (status === 'error') {
+      ElMessage.error(state.pollingMessage || '支付状态查询失败')
+    } else if (status === 'failed') {
+      ElMessage.warning('订单已关闭或支付失败，请重新下单')
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -265,6 +318,12 @@ async function refreshQrcode() {
 .error-text {
   margin-top: 6px;
   color: #dc2626;
+  font-size: 12px;
+}
+
+.polling-text {
+  margin-top: 6px;
+  color: #0f766e;
   font-size: 12px;
 }
 
