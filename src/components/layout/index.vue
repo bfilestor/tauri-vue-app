@@ -179,11 +179,12 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AuthEntryDialog from '@/components/auth/AuthEntryDialog.vue'
 import { AUTH_DIALOG_TABS } from '@/modules/security/auth-dialog-controller.js'
-import { getAuthApi, resolveSidebarUserState } from '@/modules/security/index.js'
+import { getAccountContextService, getAuthApi, resolveSidebarUserState } from '@/modules/security/index.js'
 
 const route = useRoute()
 const appWindow = getCurrentWindow()
 const authApi = getAuthApi()
+const accountContextService = getAccountContextService()
 const authDialogVisible = ref(false)
 const authDialogTab = ref(AUTH_DIALOG_TABS.login)
 const sessionState = ref(authApi.getSessionState())
@@ -212,14 +213,25 @@ const refreshSessionState = () => {
   sessionState.value = authApi.getSessionState()
 }
 
+const refreshAccountContext = async (options = {}) => {
+  try {
+    await accountContextService.refreshForCurrentSession(options)
+  } catch (error) {
+    const message = error?.message || '账户上下文加载失败'
+    ElMessage.error(message)
+  }
+}
+
 const handleAuthSuccess = () => {
   authDialogVisible.value = false
   refreshSessionState()
+  void refreshAccountContext({ force: true })
 }
 
 const handleGuestEntered = () => {
   authDialogVisible.value = false
   refreshSessionState()
+  void refreshAccountContext({ force: true })
 }
 
 const handlePurchaseClick = () => {
@@ -234,6 +246,7 @@ const handleLogout = async () => {
   try {
     await authApi.logout()
     refreshSessionState()
+    await refreshAccountContext({ force: true })
     ElMessage.success('已退出登录')
   } catch (error) {
     ElMessage.error(error?.message || '退出登录失败')
@@ -259,6 +272,7 @@ const handleQuit = async () => {
 
 onMounted(() => {
   refreshSessionState()
+  void refreshAccountContext({ force: true })
 })
 </script>
 
