@@ -44,7 +44,7 @@
 | E2-S2-I2 | 订单轮询、到账刷新与注册赠送试用提示 | Test Passed | E2-S2-I1, E1-S1-I2 | `npm test`、`npm run build` 通过 | 已实现订单状态轮询、超时/失败/取消反馈、支付成功自动刷新余额并关闭购买弹窗 |
 | E3-S1-I1 | 通用/自定义模式状态与设置页改造 | Test Passed | E2-S1-I2 | `npm test`、`npm run build` 通过 | 已完成模式状态持久化、设置页通用/自定义分区显隐，保留 Provider/Model/网络配置原有 CRUD 能力 |
 | E3-S1-I2 | 自定义模式说明页与第三方平台注册引导 | Test Passed | E3-S1-I1 | `npm test`、`npm run build` 通过 | 已新增自定义模式说明抽屉、平台接入步骤与可配置外链占位，未配置链接时明确提示“暂未配置” |
-| E3-S2-I1 | AI 问答入口的通用模式预检与购买拦截 | Todo | E2-S2-I2, E3-S1-I1 | 待补充 | 这是“购买 AI 问答服务”的首个交付入口 |
+| E3-S2-I1 | AI 问答入口的通用模式预检与购买拦截 | Test Passed | E2-S2-I2, E3-S1-I1 | `npm test`、`npm run build` 通过 | 已接入通用模式发送前 `usage/precheck`，余额不足自动拉起购买弹窗并在支付成功后自动续发原问题；自定义模式保持原 `chat_with_ai` 流程 |
 | E3-S2-I2 | OCR 与 AI 分析入口复用同一预检/拦截器 | Todo | E3-S2-I1 | 待补充 | 仅加前置拦截，不替换现有 OCR/分析实现 |
 
 

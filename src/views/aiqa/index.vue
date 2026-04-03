@@ -112,6 +112,9 @@
                 AI 问答助手
             </h3>
             <div class="flex gap-2">
+                <el-tag v-if="aiModeState.mode === AI_MODES.general" type="warning" effect="plain">通用模式</el-tag>
+                <el-tag v-else type="info" effect="plain">自定义模式</el-tag>
+                <el-tag v-if="precheckingUsage" type="info" effect="plain" class="animate-pulse">预检中...</el-tag>
                 <el-tag v-if="isGenerating" type="success" effect="plain" class="animate-pulse">正在思考...</el-tag>
                 <button 
                     @click="clearHistory"
@@ -220,13 +223,13 @@
                     ref="inputRef"
                     class="w-full bg-transparent border-none p-3 pl-4 pr-12 text-sm focus:ring-0 resize-none max-h-[150px] custom-scrollbar placeholder:text-slate-400"
                     rows="3"
-                    :disabled="isGenerating"
+                    :disabled="isGenerating || precheckingUsage"
                     placeholder="请输入您的问题... （Shift+Enter 换行）"></textarea>
                 
                 <div class="absolute right-2 bottom-2 flex items-center">
                     <button 
                         @click="sendMessage"
-                        :disabled="!inputContent.trim() || isGenerating"
+                        :disabled="!inputContent.trim() || isGenerating || precheckingUsage"
                         class="p-2 bg-blue-100 text-blue-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-200 transition-all shadow-sm flex items-center justify-center w-8 h-8"
                     >
                         <span class="material-symbols-outlined text-sm">send</span>
@@ -244,6 +247,29 @@ import { ref, onMounted, nextTick, watch, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
+import {
+  AI_MODES,
+  appRequestClient,
+  createUsageService,
+  getAuthApi,
+  useAccountContext,
+  useAiMode,
+  usePurchaseDialog,
+} from '@/modules/security/index.js'
+
+const router = useRouter()
+const authApi = getAuthApi()
+const { state: aiModeState } = useAiMode()
+const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const { state: purchaseDialogState, openPurchaseDialog } = usePurchaseDialog()
+const usageService = createUsageService({
+  client: appRequestClient,
+  idempotencyKeyFactory: (usageType = 'CHAT') => `usage-${usageType.toLowerCase()}-${Date.now()}`,
+})
+
+const precheckingUsage = ref(false)
+const pendingRetryMessage = ref('')
 
 // ===== Left: History =====
 const historyRecords = ref([])
@@ -375,13 +401,88 @@ const setInput = (text) => {
     inputRef.value?.focus()
 }
 
-const sendMessage = async () => {
-    if (!inputContent.value.trim() || isGenerating.value) return
-    
-    const text = inputContent.value
-    inputContent.value = ''
-    
-    // Optimistic UI for User Message
+const promptGuestToLogin = async () => {
+    try {
+        await ElMessageBox.confirm(
+            '通用模式需要登录并购买次数后才能继续，是否前往系统设置页登录或购买？',
+            '需要登录',
+            {
+                type: 'warning',
+                confirmButtonText: '前往设置',
+                cancelButtonText: '取消'
+            }
+        )
+        router.push('/settings')
+    } catch {
+        // cancelled
+    }
+}
+
+const ensureGeneralModeReady = async (text) => {
+    const sessionState = authApi.getSessionState()
+    if (!sessionState?.isAuthenticated || sessionState?.isGuest) {
+        pendingRetryMessage.value = text
+        await promptGuestToLogin()
+        return { ok: false, reason: 'auth_required' }
+    }
+
+    try {
+        await refreshAccountContext({ force: true })
+    } catch (e) {
+        ElMessage.error('账户状态刷新失败，暂无法继续发送: ' + (e?.message || e))
+        return { ok: false, reason: 'context_failed' }
+    }
+
+    const memberId = accountContextState.defaultMember?.memberId
+    if (accountContextState.memberBlocked || !memberId) {
+        ElMessage.warning(accountContextState.memberBlockedReason || '请先在账户中心设置默认成员后再试')
+        return { ok: false, reason: 'member_required' }
+    }
+
+    precheckingUsage.value = true
+    try {
+        const result = await usageService.precheck({
+            memberId,
+            usageType: 'CHAT',
+        })
+
+        if (result.allowed) {
+            return { ok: true }
+        }
+
+        pendingRetryMessage.value = text
+        void openPurchaseDialog({
+            preferredCalls: 20,
+            reason: 'aiqa_precheck_insufficient',
+            forceRefresh: true,
+        })
+        ElMessage.warning('剩余次数不足，请先购买套餐后重试')
+        return { ok: false, reason: 'insufficient' }
+    } catch (e) {
+        ElMessage.error('调用前预检失败: ' + (e?.message || e))
+        return { ok: false, reason: 'precheck_error' }
+    } finally {
+        precheckingUsage.value = false
+    }
+}
+
+const sendMessageWithGuard = async (text, { clearInputOnSend = false } = {}) => {
+    if (!text?.trim() || isGenerating.value) {
+        return { sent: false, reason: 'empty_or_busy' }
+    }
+
+    if (aiModeState.mode === AI_MODES.general) {
+        const precheckResult = await ensureGeneralModeReady(text)
+        if (!precheckResult.ok) {
+            return { sent: false, reason: precheckResult.reason }
+        }
+    }
+
+    if (clearInputOnSend) {
+        inputContent.value = ''
+    }
+    pendingRetryMessage.value = ''
+
     const tempUserId = 'temp-user-' + Date.now()
     chatMessages.value.push({
         id: tempUserId,
@@ -396,21 +497,27 @@ const sendMessage = async () => {
     try {
         const aiMsgId = await invoke('chat_with_ai', { message: text })
         currentGeneratingId.value = aiMsgId
-        
-        // Optimistic UI for AI Message (Empty initially)
+
         chatMessages.value.push({
             id: aiMsgId,
             role: 'assistant',
             content: '',
-            isCollapsed: false, // Auto expand new message
+            isCollapsed: false,
             created_at: new Date().toISOString()
         })
         scrollToBottom()
-
+        return { sent: true }
     } catch (e) {
         ElMessage.error('发送失败: ' + e)
         isGenerating.value = false
+        return { sent: false, reason: 'send_failed' }
     }
+}
+
+const sendMessage = async () => {
+    const text = inputContent.value.trim()
+    if (!text || isGenerating.value) return
+    await sendMessageWithGuard(text, { clearInputOnSend: true })
 }
 
 const clearHistory = async () => {
@@ -439,6 +546,12 @@ const copyContent = async (text) => {
 let unlisteners = []
 
 onMounted(async () => {
+    try {
+        await refreshAccountContext()
+    } catch {
+        // ignore account refresh failure during initial render
+    }
+
     await loadHistory(true)
     await loadChatHistory()
 
@@ -472,6 +585,22 @@ onMounted(async () => {
 onUnmounted(() => {
     unlisteners.forEach(fn => fn())
 })
+
+watch(
+    () => purchaseDialogState.pollingStatus,
+    (nextStatus, prevStatus) => {
+        if (nextStatus !== 'success' || prevStatus === 'success') {
+            return
+        }
+
+        const pendingText = pendingRetryMessage.value.trim()
+        if (!pendingText || isGenerating.value) {
+            return
+        }
+
+        void sendMessageWithGuard(pendingText, { clearInputOnSend: false })
+    }
+)
 
 const formatTime = (isoString) => {
     if (!isoString) return ''

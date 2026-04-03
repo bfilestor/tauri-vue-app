@@ -54,3 +54,4 @@ export {
   CUSTOM_MODE_PROVIDER_GUIDES,
   resolveCustomModeProviderGuides,
 } from './custom-mode-guide.js'
+export { createUsageService } from './usage-service.js'
