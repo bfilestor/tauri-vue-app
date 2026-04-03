@@ -1028,45 +1028,6 @@ const showEditDialog = ref(false)
 // ===== 手机上传 =====
 const showMobileDialog = ref(false)
 
-
-onMounted(async () => {
-    // 加载初始数据
-    await loadProjects()
-    await loadRecords(true)
-
-    // 监听手机上传事件
-    await listen('mobile_upload_success', async (event) => {
-        if (route.path !== '/upload') return
-
-        const { filepath, filename } = event.payload
-
-        console.log('Mobile upload success:', filename)
-        try {
-            // 读取文件预览
-            const base64Data = await invoke('read_temp_file', { path: filepath })
-            // 添加到待上传列表
-            pendingFiles.value.push({
-                name: filename,
-                raw: null, 
-                preview: base64Data,
-                base64: base64Data.split(',')[1],
-            })
-             ElNotification({
-                title: '接收到新文件',
-                message: `已接收来自手机的文件: ${filename}`,
-                type: 'success',
-            })
-        } catch (e) {
-            console.error('Failed to read mobile upload:', e)
-            ElNotification({
-                title: '接收文件失败',
-                message: ''+e,
-                type: 'error',
-            })
-        }
-    })
-})
-
 const savingOcrItem = ref(false)
 const editingOcrId = ref('')
 const editingIndex = ref(-1)
@@ -1143,6 +1104,7 @@ let unlistenError = null
 let unlistenAiChunk = null
 let unlistenAiDone = null
 let unlistenAiError = null
+let unlistenMobileUpload = null
 
 const setupEventListeners = async () => {
   // OCR 进度
@@ -1217,6 +1179,34 @@ const setupEventListeners = async () => {
     ElMessage.error('AI 分析失败: ' + data.error)
     loadRecords(true)
   })
+
+  // 手机上传成功
+  unlistenMobileUpload = await listen('mobile_upload_success', async (event) => {
+    if (route.path !== '/upload') return
+
+    const { filepath, filename } = event.payload
+    try {
+      const base64Data = await invoke('read_temp_file', { path: filepath })
+      pendingFiles.value.push({
+        name: filename,
+        raw: null,
+        preview: base64Data,
+        base64: base64Data.split(',')[1],
+      })
+      ElNotification({
+        title: '接收到新文件',
+        message: `已接收来自手机的文件: ${filename}`,
+        type: 'success',
+      })
+    } catch (e) {
+      console.error('Failed to read mobile upload:', e)
+      ElNotification({
+        title: '接收文件失败',
+        message: '' + e,
+        type: 'error',
+      })
+    }
+  })
 }
 
 // ===== 状态辅助函数 =====
@@ -1281,10 +1271,10 @@ const statusIconClass = (status) => {
 }
 
 // ===== 初始化 =====
-onMounted(() => {
-  loadRecords(true)
-  loadProjects()
-  setupEventListeners()
+onMounted(async () => {
+  await loadRecords(true)
+  await loadProjects()
+  await setupEventListeners()
 })
 
 watch(records, () => {
@@ -1343,5 +1333,6 @@ onUnmounted(() => {
   unlistenAiChunk?.()
   unlistenAiDone?.()
   unlistenAiError?.()
+  unlistenMobileUpload?.()
 })
 </script>
