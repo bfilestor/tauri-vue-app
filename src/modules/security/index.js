@@ -49,3 +49,8 @@ export { usePurchaseDialog } from './use-purchase-dialog.js'
 export { AI_MODES, DEFAULT_AI_MODE, createAiModeService } from './ai-mode-service.js'
 export { getAiModeService } from './ai-mode-store.js'
 export { useAiMode } from './use-ai-mode.js'
+export {
+  CUSTOM_MODE_GUIDE_STEPS,
+  CUSTOM_MODE_PROVIDER_GUIDES,
+  resolveCustomModeProviderGuides,
+} from './custom-mode-guide.js'

@@ -94,6 +94,15 @@
             :closable="false"
             :title="accountContextState.isGuest ? '当前为访客态，建议登录后再配置自定义模型服务。' : '当前为自定义模式，所有模型调用将复用你现有的 Provider 与模型配置。'"
           />
+          <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <p class="text-sm font-bold text-slate-700">还没有 API Key？先看接入说明</p>
+              <p class="text-xs text-slate-500 mt-1">内含平台类型、获取 API Key 步骤和注册链接占位（未配置会明确提示）。</p>
+            </div>
+            <el-button plain size="small" @click="openCustomModeGuide">
+              <span class="material-symbols-outlined text-sm mr-1">help</span>查看接入说明
+            </el-button>
+          </div>
           <div class="flex h-[620px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
             <!-- 左侧: 提供商列表 -->
             <div class="w-60 border-r border-slate-100 bg-slate-50/80 flex flex-col shrink-0">
@@ -531,6 +540,51 @@
       </el-dialog>
     </el-drawer>
 
+    <!-- 自定义模式说明抽屉 -->
+    <el-drawer v-model="showCustomModeGuideDrawer" title="自定义模式接入说明" size="540px">
+      <div class="space-y-6">
+        <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <p class="text-sm font-bold text-slate-700">准备步骤</p>
+          <ol class="mt-2 space-y-2">
+            <li
+              v-for="(step, index) in CUSTOM_MODE_GUIDE_STEPS"
+              :key="step"
+              class="text-sm text-slate-600 flex items-start gap-2"
+            >
+              <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-xs font-bold flex items-center justify-center mt-0.5">{{ index + 1 }}</span>
+              <span>{{ step }}</span>
+            </li>
+          </ol>
+        </div>
+        <div>
+          <p class="text-sm font-bold text-slate-700 mb-3">可接入平台（注册链接占位）</p>
+          <div class="space-y-3">
+            <div
+              v-for="guide in customModeProviderGuides"
+              :key="guide.key"
+              class="rounded-xl border border-slate-200 p-4 bg-white"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-sm font-bold text-slate-800">{{ guide.name }}</p>
+                  <p class="text-xs text-slate-500 mt-1">{{ guide.description }}</p>
+                  <p v-if="!guide.linkConfigured" class="text-xs text-amber-600 mt-2">注册链接暂未配置</p>
+                  <p v-else class="text-xs text-slate-500 mt-2 break-all">{{ guide.signupUrl }}</p>
+                </div>
+                <el-button
+                  size="small"
+                  :disabled="!guide.linkConfigured"
+                  @click="handleOpenProviderSignup(guide)"
+                >
+                  前往注册
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
     <!-- 新增/编辑提供商弹窗 -->
     <el-dialog v-model="showProviderDialog" :title="editingProviderObj ? '编辑提供商' : '添加提供商'" width="380px" :close-on-click-modal="false">
       <div class="flex justify-center mb-4">
@@ -587,7 +641,16 @@ import { ref, reactive, onMounted, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
-import { AI_MODES, resolveUsageFeedback, useAccountContext, useAiMode, usePurchaseDialog } from '@/modules/security/index.js'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import {
+  AI_MODES,
+  CUSTOM_MODE_GUIDE_STEPS,
+  resolveCustomModeProviderGuides,
+  resolveUsageFeedback,
+  useAccountContext,
+  useAiMode,
+  usePurchaseDialog,
+} from '@/modules/security/index.js'
 
 // ===== 多提供商管理 (ISS-060~066) =====
 const activeTab = ref('ai')
@@ -648,6 +711,7 @@ const exitDeveloperMode = () => {
 // Provider / Model 弹窗
 const showProviderDialog = ref(false)
 const showModelDialog = ref(false)
+const showCustomModeGuideDrawer = ref(false)
 const editingProviderObj = ref(null)
 const editingModelObj = ref(null)
 const providerForm = reactive({ name: '', type: 'openai' })
@@ -679,6 +743,7 @@ const activeAiMode = computed({
   },
 })
 const isGeneralMode = computed(() => activeAiMode.value === AI_MODES.general)
+const customModeProviderGuides = computed(() => resolveCustomModeProviderGuides())
 
 // ===== 颜色映射 =====
 const PROVIDER_COLORS = {
@@ -707,6 +772,23 @@ const handleOpenPurchaseDialog = (preferredCalls) => {
     preferredCalls,
     reason: 'settings',
   })
+}
+
+const openCustomModeGuide = () => {
+  showCustomModeGuideDrawer.value = true
+}
+
+const handleOpenProviderSignup = async (guide) => {
+  if (!guide?.linkConfigured || !guide?.signupUrl) {
+    ElMessage.info('该平台注册链接暂未配置')
+    return
+  }
+
+  try {
+    await openUrl(guide.signupUrl)
+  } catch (e) {
+    ElMessage.error('打开注册链接失败: ' + (e?.message || e))
+  }
 }
 
 // ===== 加载数据 =====
