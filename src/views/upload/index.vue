@@ -169,16 +169,16 @@
           <div class="flex gap-3 mt-4 pt-4 border-t border-slate-200">
             <el-button
               type="warning"
-              :disabled="currentFiles.length === 0 || record.status === 'ocr_processing'"
-              :loading="ocrLoading"
+              :disabled="currentFiles.length === 0 || record.status === 'ocr_processing' || usagePrechecking"
+              :loading="ocrLoading || isCheckingRecordAction(record.id, 'OCR')"
               @click="startOcr(record)">
               <span class="material-symbols-outlined text-sm mr-1">document_scanner</span>
               AI智能识别
             </el-button>
             <el-button
               type="success"
-              :disabled="record.status !== 'ocr_done' && record.status !== 'ai_done'"
-              :loading="aiLoading"
+              :disabled="(record.status !== 'ocr_done' && record.status !== 'ai_done') || usagePrechecking"
+              :loading="aiLoading || isCheckingRecordAction(record.id, 'ANALYZE')"
               @click="startAiAnalysis(record)">
               <span class="material-symbols-outlined text-sm mr-1">psychology</span>
               AI智能分析
@@ -418,13 +418,34 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import MobileUploadDialog from '@/components/MobileUploadDialog.vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
-
-
-
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import {
+  AI_MODES,
+  appRequestClient,
+  createUsageService,
+  getAuthApi,
+  useAccountContext,
+  useAiMode,
+  usePurchaseDialog,
+} from '@/modules/security/index.js'
+
+const route = useRoute()
+const router = useRouter()
+const authApi = getAuthApi()
+const { state: aiModeState } = useAiMode()
+const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const { state: purchaseDialogState, openPurchaseDialog } = usePurchaseDialog()
+const usageService = createUsageService({
+  client: appRequestClient,
+  idempotencyKeyFactory: (usageType = 'CHAT') => `usage-${usageType.toLowerCase()}-${Date.now()}`,
+})
+const usagePrechecking = ref(false)
+const usageCheckingType = ref('')
+const usageCheckingRecordId = ref('')
+const pendingUsageAction = ref(null)
 
 // ===== 检查记录 =====
 const records = ref([])
@@ -752,7 +773,93 @@ const recoverOcrPollingFromRecords = () => {
   startOcrStatusPolling(processingRecord.id)
 }
 
-const startOcr = async (record) => {
+const isCheckingRecordAction = (recordId, usageType) => {
+  return usagePrechecking.value
+    && usageCheckingType.value === usageType
+    && String(usageCheckingRecordId.value) === String(recordId)
+}
+
+const promptGuestToLogin = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '通用模式需要先登录并购买次数后才能继续，是否前往系统设置页？',
+      '需要登录',
+      {
+        type: 'warning',
+        confirmButtonText: '前往设置',
+        cancelButtonText: '取消',
+      }
+    )
+    router.push('/settings')
+  } catch {
+    // cancelled
+  }
+}
+
+const runActionWithUsageGuard = async ({ record, usageType, action }) => {
+  if (aiModeState.mode !== AI_MODES.general) {
+    pendingUsageAction.value = null
+    return action()
+  }
+
+  const sessionState = authApi.getSessionState()
+  if (!sessionState?.isAuthenticated || sessionState?.isGuest) {
+    pendingUsageAction.value = null
+    await promptGuestToLogin()
+    return false
+  }
+
+  try {
+    await refreshAccountContext({ force: true })
+  } catch (e) {
+    ElMessage.error('账户状态刷新失败，暂无法继续: ' + (e?.message || e))
+    return false
+  }
+
+  const memberId = accountContextState.defaultMember?.memberId
+  if (accountContextState.memberBlocked || !memberId) {
+    pendingUsageAction.value = null
+    ElMessage.warning(accountContextState.memberBlockedReason || '请先设置默认成员后再试')
+    return false
+  }
+
+  usagePrechecking.value = true
+  usageCheckingType.value = usageType
+  usageCheckingRecordId.value = record.id
+  try {
+    const precheckResult = await usageService.precheck({
+      memberId,
+      usageType,
+    })
+
+    if (!precheckResult.allowed) {
+      pendingUsageAction.value = {
+        usageType,
+        recordId: record.id,
+      }
+      void openPurchaseDialog({
+        preferredCalls: 20,
+        reason: 'upload_precheck_insufficient',
+        forceRefresh: true,
+      })
+      ElMessage.warning('剩余次数不足，请先购买套餐后继续')
+      return false
+    }
+  } catch (e) {
+    ElMessage.error('调用前预检失败: ' + (e?.message || e))
+    return false
+  } finally {
+    usagePrechecking.value = false
+    usageCheckingType.value = ''
+    usageCheckingRecordId.value = ''
+  }
+
+  pendingUsageAction.value = null
+  await action()
+  return true
+}
+
+const executeStartOcr = async (record) => {
   ocrLoading.value = true
   ocrProgress.record_id = record.id
   ocrProgress.total = Math.max(record.file_count || 0, 1)
@@ -770,12 +877,20 @@ const startOcr = async (record) => {
   }
 }
 
+const startOcr = async (record) => {
+  await runActionWithUsageGuard({
+    record,
+    usageType: 'OCR',
+    action: () => executeStartOcr(record),
+  })
+}
+
 // ===== AI 分析功能 =====
 const aiLoading = ref(false)
 const aiStreamContent = ref('')
 const aiStreamRecordId = ref('')
 
-const startAiAnalysis = async (record) => {
+const executeStartAiAnalysis = async (record) => {
   aiLoading.value = true
   aiStreamContent.value = ''
   aiStreamRecordId.value = record.id
@@ -787,6 +902,14 @@ const startAiAnalysis = async (record) => {
     aiLoading.value = false
     ElMessage.error('启动AI分析失败: ' + e)
   }
+}
+
+const startAiAnalysis = async (record) => {
+  await runActionWithUsageGuard({
+    record,
+    usageType: 'ANALYZE',
+    action: () => executeStartAiAnalysis(record),
+  })
 }
 
 // 简单的 Markdown 渲染（不依赖额外库）
@@ -904,7 +1027,6 @@ const showEditDialog = ref(false)
 
 // ===== 手机上传 =====
 const showMobileDialog = ref(false)
-const route = useRoute()
 
 
 onMounted(async () => {
@@ -1183,6 +1305,35 @@ watch(fileCategoryOptions, (options) => {
     selectedFileCategoryId.value = ALL_CATEGORY_VALUE
   }
 }, { immediate: true })
+
+watch(
+  () => purchaseDialogState.pollingStatus,
+  (nextStatus, prevStatus) => {
+    if (nextStatus !== 'success' || prevStatus === 'success') {
+      return
+    }
+
+    const pendingAction = pendingUsageAction.value
+    if (!pendingAction || usagePrechecking.value || ocrLoading.value || aiLoading.value) {
+      return
+    }
+
+    const targetRecord = records.value.find((item) => String(item.id) === String(pendingAction.recordId))
+    if (!targetRecord) {
+      pendingUsageAction.value = null
+      return
+    }
+
+    if (pendingAction.usageType === 'OCR') {
+      void startOcr(targetRecord)
+      return
+    }
+
+    if (pendingAction.usageType === 'ANALYZE') {
+      void startAiAnalysis(targetRecord)
+    }
+  }
+)
 
 onUnmounted(() => {
   stopOcrStatusPolling()
