@@ -26,3 +26,10 @@ export { createRequestClient } from './request-client.js'
 export { createMemoryStorage, createStorageAdapter } from './storage.js'
 export { createAuthSessionStore } from './session-store.js'
 export { createAuthApi } from './auth-api.js'
+export {
+  AUTH_DIALOG_TABS,
+  createAuthDialogController,
+  createInitialAuthDialogState,
+} from './auth-dialog-controller.js'
+export { getAuthApi, resolveAuthDeviceContext } from './auth-service.js'
+export { resolveSidebarUserState } from './sidebar-user-state.js'

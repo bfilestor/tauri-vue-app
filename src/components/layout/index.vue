@@ -29,15 +29,59 @@
       </nav>
 
       <!-- 底部用户信息 -->
-      <div class="p-4 border-t border-slate-200">
-        <div class="flex items-center gap-3 px-2 py-2 mb-2">
-          <div class="w-10 h-10 rounded-full bg-[#2b8cee]/10 flex items-center justify-center text-[#2b8cee]">
-            <span class="material-symbols-outlined">person</span>
+      <div class="p-4 border-t border-slate-200 space-y-3">
+        <div v-if="userAreaState.mode === 'authenticated'" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-[#2b8cee]/15 flex items-center justify-center text-[#2b8cee] text-sm font-bold">
+              {{ userAreaState.avatarText }}
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-bold text-slate-800 truncate">{{ userAreaState.displayName }}</p>
+              <p class="text-xs text-slate-400 flex items-center gap-1">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                {{ userAreaState.subtitle }}
+              </p>
+            </div>
           </div>
-          <div>
-            <p class="text-sm font-bold text-slate-800">健康用户</p>
-            <p class="text-xs text-slate-400">本地管理</p>
+          <div class="mt-3">
+            <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+              <span>剩余次数</span>
+              <span class="font-semibold text-[#2b8cee]">{{ userAreaState.usage.label }}</span>
+            </div>
+            <div class="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+              <div class="h-full rounded-full bg-gradient-to-r from-[#2b8cee] to-cyan-400" :style="{ width: `${userAreaState.usage.percent}%` }"></div>
+            </div>
           </div>
+          <div class="grid grid-cols-3 gap-2 mt-3">
+            <button class="text-[11px] rounded-md border border-slate-200 bg-white px-1 py-1.5 text-slate-600 hover:border-[#2b8cee] hover:text-[#2b8cee] transition-colors" @click="handlePurchaseClick">
+              购买次数
+            </button>
+            <button class="text-[11px] rounded-md border border-slate-200 bg-white px-1 py-1.5 text-slate-600 hover:border-[#2b8cee] hover:text-[#2b8cee] transition-colors" @click="handleAccountMenu">
+              账号菜单
+            </button>
+            <button class="text-[11px] rounded-md border border-red-100 bg-red-50 px-1 py-1.5 text-red-500 hover:bg-red-100 transition-colors" @click="handleLogout">
+              退出登录
+            </button>
+          </div>
+        </div>
+        <div v-else class="space-y-2">
+          <button
+            @click="openAuthDialog(AUTH_DIALOG_TABS.login)"
+            class="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#2196f3] to-[#1565c0] rounded-lg hover:opacity-95 transition-opacity"
+          >
+            <span class="material-symbols-outlined text-lg">person</span>
+            登录账号
+          </button>
+          <button
+            @click="openAuthDialog(AUTH_DIALOG_TABS.register)"
+            class="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold text-[#2196f3] bg-white border border-slate-200 rounded-lg hover:border-[#2196f3] hover:bg-blue-50 transition-colors"
+          >
+            <span class="material-symbols-outlined text-lg">auto_awesome</span>
+            免费注册
+          </button>
+          <p class="text-[11px] text-center text-slate-400">
+            {{ userAreaState.mode === 'guest' ? userAreaState.guestHint : userAreaState.trialHint }}
+          </p>
         </div>
         <button
           @click="handleQuit"
@@ -55,6 +99,25 @@
       <header class="h-10 flex items-center justify-between px-4 select-none shrink-0" data-tauri-drag-region>
         <div class="flex-1 h-full" data-tauri-drag-region></div>
         <div class="flex items-center gap-1 relative z-50">
+          <template v-if="showHeaderAuthButtons">
+            <button
+              @click="openAuthDialog(AUTH_DIALOG_TABS.login)"
+              class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 hover:bg-slate-100 transition-colors"
+              title="登录账号"
+            >
+              登录
+            </button>
+            <button
+              @click="openAuthDialog(AUTH_DIALOG_TABS.register)"
+              class="px-3 py-1.5 rounded-lg bg-[#2b8cee] text-xs text-white hover:bg-[#1f7dd9] transition-colors"
+              title="注册账号"
+            >
+              注册
+            </button>
+          </template>
+          <div v-else class="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs text-slate-600">
+            {{ userAreaState.displayName }}
+          </div>
           <button 
             @click="appWindow.minimize()"
             class="p-2 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center w-8 h-8"
@@ -100,16 +163,32 @@
       </div>
     </main>
   </div>
+  <auth-entry-dialog
+    v-model="authDialogVisible"
+    :default-tab="authDialogTab"
+    @auth-success="handleAuthSuccess"
+    @guest-entered="handleGuestEntered"
+  />
 </template>
 
 <script setup>
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import AuthEntryDialog from '@/components/auth/AuthEntryDialog.vue'
+import { AUTH_DIALOG_TABS } from '@/modules/security/auth-dialog-controller.js'
+import { getAuthApi, resolveSidebarUserState } from '@/modules/security/index.js'
 
 const route = useRoute()
 const appWindow = getCurrentWindow()
+const authApi = getAuthApi()
+const authDialogVisible = ref(false)
+const authDialogTab = ref(AUTH_DIALOG_TABS.login)
+const sessionState = ref(authApi.getSessionState())
+const userAreaState = computed(() => resolveSidebarUserState(sessionState.value))
+const showHeaderAuthButtons = computed(() => userAreaState.value.mode !== 'authenticated')
 
 const menuItems = [
   { path: '/upload', title: '数据上传', icon: 'cloud_upload' },
@@ -122,6 +201,43 @@ const menuItems = [
 
 const isActive = (path) => {
   return route.path === path
+}
+
+const openAuthDialog = (tab = AUTH_DIALOG_TABS.login) => {
+  authDialogTab.value = tab
+  authDialogVisible.value = true
+}
+
+const refreshSessionState = () => {
+  sessionState.value = authApi.getSessionState()
+}
+
+const handleAuthSuccess = () => {
+  authDialogVisible.value = false
+  refreshSessionState()
+}
+
+const handleGuestEntered = () => {
+  authDialogVisible.value = false
+  refreshSessionState()
+}
+
+const handlePurchaseClick = () => {
+  ElMessage.info('购买次数入口将在 E2-S2-I1 接入')
+}
+
+const handleAccountMenu = () => {
+  ElMessage.info('账号菜单详情将在后续 Issue 接入')
+}
+
+const handleLogout = async () => {
+  try {
+    await authApi.logout()
+    refreshSessionState()
+    ElMessage.success('已退出登录')
+  } catch (error) {
+    ElMessage.error(error?.message || '退出登录失败')
+  }
 }
 
 const handleQuit = async () => {
@@ -140,6 +256,10 @@ const handleQuit = async () => {
     // 用户取消退出
   }
 }
+
+onMounted(() => {
+  refreshSessionState()
+})
 </script>
 
 <style scoped>
