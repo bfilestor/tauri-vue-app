@@ -51,6 +51,14 @@
                 <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-blue-600'">
                   {{ card.missing ? '请稍后刷新商品列表' : `价格: ¥${card.product?.price ?? '-'}` }}
                 </p>
+                <el-button
+                  size="small"
+                  class="!mt-2 !w-full"
+                  :disabled="card.missing || !card.purchasable"
+                  @click="handleOpenPurchaseDialog(card.targetCalls)"
+                >
+                  购买此套餐
+                </el-button>
               </div>
             </div>
           </div>
@@ -547,11 +555,12 @@ import { ref, reactive, onMounted, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
-import { resolveUsageFeedback, useAccountContext } from '@/modules/security/index.js'
+import { resolveUsageFeedback, useAccountContext, usePurchaseDialog } from '@/modules/security/index.js'
 
 // ===== 多提供商管理 (ISS-060~066) =====
 const activeTab = ref('ai')
 const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const { openPurchaseDialog } = usePurchaseDialog()
 const refreshingAccountContext = ref(false)
 const searchProvider = ref('')
 const activeProviderId = ref('')
@@ -651,6 +660,13 @@ const handleRefreshAccountContext = async () => {
   } finally {
     refreshingAccountContext.value = false
   }
+}
+
+const handleOpenPurchaseDialog = (preferredCalls) => {
+  void openPurchaseDialog({
+    preferredCalls,
+    reason: 'settings',
+  })
 }
 
 // ===== 加载数据 =====

@@ -172,6 +172,7 @@
     @auth-success="handleAuthSuccess"
     @guest-entered="handleGuestEntered"
   />
+  <purchase-dialog />
 </template>
 
 <script setup>
@@ -181,6 +182,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AuthEntryDialog from '@/components/auth/AuthEntryDialog.vue'
+import PurchaseDialog from '@/components/payment/PurchaseDialog.vue'
 import { AUTH_DIALOG_TABS } from '@/modules/security/auth-dialog-controller.js'
 import {
   buildAccountMenuEntries,
@@ -188,12 +190,14 @@ import {
   resolveSidebarUserState,
   resolveUsageFeedback,
   useAccountContext,
+  usePurchaseDialog,
 } from '@/modules/security/index.js'
 
 const route = useRoute()
 const appWindow = getCurrentWindow()
 const authApi = getAuthApi()
 const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const { openPurchaseDialog } = usePurchaseDialog()
 const authDialogVisible = ref(false)
 const authDialogTab = ref(AUTH_DIALOG_TABS.login)
 const sessionState = ref(authApi.getSessionState())
@@ -260,7 +264,9 @@ const handleGuestEntered = () => {
 }
 
 const handlePurchaseClick = () => {
-  ElMessage.info('购买次数入口将在 E2-S2-I1 接入')
+  void openPurchaseDialog({
+    reason: 'sidebar',
+  })
 }
 
 const handleAccountMenu = () => {

@@ -40,3 +40,9 @@ export {
 export { getAccountContextService } from './account-service.js'
 export { buildAccountMenuEntries, resolveUsageFeedback } from './account-view.js'
 export { useAccountContext } from './use-account-context.js'
+export { createOrderService } from './order-service.js'
+export {
+  createInitialPurchaseDialogState,
+  createPurchaseDialogController,
+} from './purchase-dialog-controller.js'
+export { usePurchaseDialog } from './use-purchase-dialog.js'
