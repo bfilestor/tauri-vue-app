@@ -35,7 +35,7 @@
             <span class="material-symbols-outlined">person</span>
           </div>
           <div>
-            <p class="text-sm font-bold text-slate-800">健康用户</p>
+            <p class="text-sm font-bold text-slate-800">{{ displayName }}</p>
             <p class="text-xs text-slate-400">本地管理</p>
           </div>
         </div>
@@ -72,6 +72,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessageBox } from 'element-plus'
@@ -83,6 +84,36 @@ const menuItems = [
   { path: '/trends', title: '趋势分析', icon: 'insights' },
   { path: '/settings', title: '系统设置', icon: 'settings' },
 ]
+
+const getDisplayName = () => {
+  const candidates = [
+    localStorage.getItem('nickname'),
+    localStorage.getItem('nickName'),
+    localStorage.getItem('username'),
+    localStorage.getItem('userName'),
+    localStorage.getItem('name'),
+  ]
+
+  const userInfoRaw = localStorage.getItem('userInfo') || localStorage.getItem('user_info')
+  if (userInfoRaw) {
+    try {
+      const userInfo = JSON.parse(userInfoRaw)
+      candidates.unshift(
+        userInfo?.nickname,
+        userInfo?.nickName,
+        userInfo?.username,
+        userInfo?.userName,
+        userInfo?.name,
+      )
+    } catch (_) {
+      // ignore parse error
+    }
+  }
+
+  return candidates.find(v => typeof v === 'string' && v.trim())?.trim() || '健康用户'
+}
+
+const displayName = computed(() => getDisplayName())
 
 const isActive = (path) => {
   return route.path === path
