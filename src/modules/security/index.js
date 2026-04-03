@@ -46,3 +46,6 @@ export {
   createPurchaseDialogController,
 } from './purchase-dialog-controller.js'
 export { usePurchaseDialog } from './use-purchase-dialog.js'
+export { AI_MODES, DEFAULT_AI_MODE, createAiModeService } from './ai-mode-service.js'
+export { getAiModeService } from './ai-mode-store.js'
+export { useAiMode } from './use-ai-mode.js'

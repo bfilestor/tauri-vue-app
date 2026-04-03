@@ -10,159 +10,191 @@
       <el-tab-pane label="模型服务" name="ai">
         <el-card shadow="never" class="!rounded-xl !border-slate-200 mb-6">
           <template #header>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
-                <span class="material-symbols-outlined text-blue-500 text-[18px]">credit_score</span>
-                通用模式次数概览
-              </div>
-              <el-button size="small" plain :loading="refreshingAccountContext" @click="handleRefreshAccountContext">
-                刷新余额
-              </el-button>
+            <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
+              <span class="material-symbols-outlined text-blue-500 text-[18px]">switch_access_shortcut</span>
+              模式切换
             </div>
           </template>
           <div class="space-y-4">
-            <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
-              <div class="flex items-center justify-between text-sm text-slate-600">
-                <span>当前剩余次数</span>
-                <span class="font-bold text-blue-600">{{ accountUsage.label }}</span>
-              </div>
-              <div class="mt-2 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
-                <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full" :style="{ width: `${accountUsage.percent}%` }"></div>
-              </div>
-              <p v-if="accountUsage.stale" class="mt-2 text-xs text-amber-600">余额接口异常，当前显示缓存数据</p>
-            </div>
-            <el-alert
-              v-if="accountContextState.memberBlocked"
-              type="warning"
-              :closable="false"
-              :title="accountContextState.memberBlockedReason || '未找到默认成员，请先在账户中心设置默认成员'"
-            />
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div
-                v-for="card in accountPackageCards"
-                :key="card.targetCalls"
-                class="rounded-xl border p-3"
-                :class="card.missing ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50/40'"
-              >
-                <p class="text-sm font-bold text-slate-800">{{ card.title }}</p>
-                <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-slate-600'">
-                  {{ card.missing ? '该档套餐暂不可用' : `SKU: ${card.product?.skuId || '-'}` }}
-                </p>
-                <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-blue-600'">
-                  {{ card.missing ? '请稍后刷新商品列表' : `价格: ¥${card.product?.price ?? '-'}` }}
-                </p>
-                <el-button
-                  size="small"
-                  class="!mt-2 !w-full"
-                  :disabled="card.missing || !card.purchasable"
-                  @click="handleOpenPurchaseDialog(card.targetCalls)"
-                >
-                  购买此套餐
-                </el-button>
-              </div>
-            </div>
+            <el-radio-group v-model="activeAiMode" size="large">
+              <el-radio-button :label="AI_MODES.general">通用模式</el-radio-button>
+              <el-radio-button :label="AI_MODES.custom">自定义模式</el-radio-button>
+            </el-radio-group>
+            <p v-if="isGeneralMode" class="text-sm text-slate-500">
+              使用平台内置模型服务，按调用次数计费。可在本页直接购买套餐并查看剩余次数。
+            </p>
+            <p v-else class="text-sm text-slate-500">
+              使用你自己的 Provider 与模型配置。现有提供商、模型和网络设置能力保持不变。
+            </p>
           </div>
         </el-card>
-        <div class="flex h-[620px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-          <!-- 左侧: 提供商列表 -->
-          <div class="w-60 border-r border-slate-100 bg-slate-50/80 flex flex-col shrink-0">
-            <div class="p-3 border-b border-slate-100 bg-white">
-              <el-input v-model="searchProvider" placeholder="搜索提供商..." clearable size="small">
-                <template #prefix><span class="material-symbols-outlined text-sm text-slate-400">search</span></template>
-              </el-input>
-            </div>
-            <div class="flex-1 overflow-y-auto p-2 space-y-1">
-              <div v-for="p in filteredProviders" :key="p.id"
-                   class="flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150"
-                   :class="activeProviderId === p.id
-                     ? 'bg-white shadow-sm border border-blue-200 ring-1 ring-blue-100'
-                     : 'hover:bg-white/70 border border-transparent'"
-                   @click="selectProvider(p.id)">
-                <div class="flex items-center gap-2.5 overflow-hidden min-w-0">
-                  <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-inner"
-                       :style="{ background: getProviderColor(p.type) }">
-                    {{ p.name.charAt(0).toUpperCase() }}
-                  </div>
-                  <span class="text-sm font-medium text-slate-700 truncate">{{ p.name }}</span>
-                </div>
-                <el-switch v-model="p.enabled" size="small" @click.stop @change="toggleProviderEnabled(p)" class="shrink-0 ml-1" />
-              </div>
-              <div v-if="filteredProviders.length === 0" class="text-center text-slate-400 mt-10 text-xs">暂无匹配</div>
-            </div>
-            <div class="p-3 border-t border-slate-100 bg-white">
-              <el-button class="w-full" plain size="small" @click="openAddProviderDialog">
-                <span class="material-symbols-outlined text-sm mr-1">add</span>添加提供商
-              </el-button>
-            </div>
-          </div>
 
-          <!-- 右侧: 提供商配置 + 模型列表 -->
-          <div v-if="activeProvider" class="flex-1 flex flex-col min-w-0 overflow-y-auto">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur z-10">
-              <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" :style="{ background: getProviderColor(activeProvider.type) }">
-                  {{ activeProvider.name.charAt(0).toUpperCase() }}
+        <template v-if="isGeneralMode">
+          <el-card shadow="never" class="!rounded-xl !border-slate-200 mb-6">
+            <template #header>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
+                  <span class="material-symbols-outlined text-blue-500 text-[18px]">credit_score</span>
+                  通用模式次数概览
                 </div>
-                {{ activeProvider.name }}
-                <el-tag size="small" type="info" effect="plain" class="!ml-2">{{ activeProvider.type }}</el-tag>
-              </h2>
-              <div class="flex items-center gap-2">
-                <el-button link size="small" @click="editProvider(activeProvider)">
-                  <span class="material-symbols-outlined text-slate-400 text-[18px] hover:text-blue-500 transition-colors">settings</span>
+                <el-button size="small" plain :loading="refreshingAccountContext" @click="handleRefreshAccountContext">
+                  刷新余额
                 </el-button>
-                <el-button link type="danger" size="small" @click="delProvider(activeProvider.id)">
-                  <span class="material-symbols-outlined text-[18px]">delete</span>
+              </div>
+            </template>
+            <div class="space-y-4">
+              <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
+                <div class="flex items-center justify-between text-sm text-slate-600">
+                  <span>当前剩余次数</span>
+                  <span class="font-bold text-blue-600">{{ accountUsage.label }}</span>
+                </div>
+                <div class="mt-2 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full" :style="{ width: `${accountUsage.percent}%` }"></div>
+                </div>
+                <p v-if="accountUsage.stale" class="mt-2 text-xs text-amber-600">余额接口异常，当前显示缓存数据</p>
+              </div>
+              <el-alert
+                v-if="accountContextState.memberBlocked"
+                type="warning"
+                :closable="false"
+                :title="accountContextState.memberBlockedReason || '未找到默认成员，请先在账户中心设置默认成员'"
+              />
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div
+                  v-for="card in accountPackageCards"
+                  :key="card.targetCalls"
+                  class="rounded-xl border p-3"
+                  :class="card.missing ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50/40'"
+                >
+                  <p class="text-sm font-bold text-slate-800">{{ card.title }}</p>
+                  <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-slate-600'">
+                    {{ card.missing ? '该档套餐暂不可用' : `SKU: ${card.product?.skuId || '-'}` }}
+                  </p>
+                  <p class="text-xs mt-1" :class="card.missing ? 'text-slate-400' : 'text-blue-600'">
+                    {{ card.missing ? '请稍后刷新商品列表' : `价格: ¥${card.product?.price ?? '-'}` }}
+                  </p>
+                  <el-button
+                    size="small"
+                    class="!mt-2 !w-full"
+                    :disabled="card.missing || !card.purchasable"
+                    @click="handleOpenPurchaseDialog(card.targetCalls)"
+                  >
+                    购买此套餐
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </el-card>
+        </template>
+
+        <template v-else>
+          <el-alert
+            class="mb-4"
+            type="info"
+            :closable="false"
+            :title="accountContextState.isGuest ? '当前为访客态，建议登录后再配置自定义模型服务。' : '当前为自定义模式，所有模型调用将复用你现有的 Provider 与模型配置。'"
+          />
+          <div class="flex h-[620px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <!-- 左侧: 提供商列表 -->
+            <div class="w-60 border-r border-slate-100 bg-slate-50/80 flex flex-col shrink-0">
+              <div class="p-3 border-b border-slate-100 bg-white">
+                <el-input v-model="searchProvider" placeholder="搜索提供商..." clearable size="small">
+                  <template #prefix><span class="material-symbols-outlined text-sm text-slate-400">search</span></template>
+                </el-input>
+              </div>
+              <div class="flex-1 overflow-y-auto p-2 space-y-1">
+                <div v-for="p in filteredProviders" :key="p.id"
+                     class="flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150"
+                     :class="activeProviderId === p.id
+                       ? 'bg-white shadow-sm border border-blue-200 ring-1 ring-blue-100'
+                       : 'hover:bg-white/70 border border-transparent'"
+                     @click="selectProvider(p.id)">
+                  <div class="flex items-center gap-2.5 overflow-hidden min-w-0">
+                    <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-inner"
+                         :style="{ background: getProviderColor(p.type) }">
+                      {{ p.name.charAt(0).toUpperCase() }}
+                    </div>
+                    <span class="text-sm font-medium text-slate-700 truncate">{{ p.name }}</span>
+                  </div>
+                  <el-switch v-model="p.enabled" size="small" @click.stop @change="toggleProviderEnabled(p)" class="shrink-0 ml-1" />
+                </div>
+                <div v-if="filteredProviders.length === 0" class="text-center text-slate-400 mt-10 text-xs">暂无匹配</div>
+              </div>
+              <div class="p-3 border-t border-slate-100 bg-white">
+                <el-button class="w-full" plain size="small" @click="openAddProviderDialog">
+                  <span class="material-symbols-outlined text-sm mr-1">add</span>添加提供商
                 </el-button>
               </div>
             </div>
-            <div class="p-6 space-y-6 flex-1">
-              <div class="bg-slate-50/60 p-5 rounded-xl border border-slate-100 space-y-4">
-                <div>
-                  <div class="flex justify-between items-center mb-1.5">
-                    <label class="text-sm font-bold text-slate-700">API 密钥</label>
-                    <el-button type="primary" plain size="small" class="!px-3 !h-7" @click="testProviderConnection(activeProvider)" :loading="testingProviderId === activeProvider.id">
-                      <span class="material-symbols-outlined text-xs mr-1">wifi_tethering</span>检测
-                    </el-button>
+
+            <!-- 右侧: 提供商配置 + 模型列表 -->
+            <div v-if="activeProvider" class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+              <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur z-10">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" :style="{ background: getProviderColor(activeProvider.type) }">
+                    {{ activeProvider.name.charAt(0).toUpperCase() }}
                   </div>
-                  <el-input v-model="activeProvider.api_key" type="password" show-password placeholder="sk-..." @change="saveProviderField(activeProvider)" />
-                </div>
-                <div>
-                  <label class="text-sm font-bold text-slate-700 mb-1.5 block">API 地址</label>
-                  <el-input v-model="activeProvider.api_url" placeholder="https://api.openai.com/v1/chat/completions" @change="saveProviderField(activeProvider)" />
+                  {{ activeProvider.name }}
+                  <el-tag size="small" type="info" effect="plain" class="!ml-2">{{ activeProvider.type }}</el-tag>
+                </h2>
+                <div class="flex items-center gap-2">
+                  <el-button link size="small" @click="editProvider(activeProvider)">
+                    <span class="material-symbols-outlined text-slate-400 text-[18px] hover:text-blue-500 transition-colors">settings</span>
+                  </el-button>
+                  <el-button link type="danger" size="small" @click="delProvider(activeProvider.id)">
+                    <span class="material-symbols-outlined text-[18px]">delete</span>
+                  </el-button>
                 </div>
               </div>
-              <div>
-                <div class="flex justify-between items-center mb-3">
-                  <h3 class="font-bold text-slate-800 flex items-center gap-2">模型 <el-tag size="small" type="primary" round effect="plain">{{ providerModels.length }}</el-tag></h3>
-                  <el-button size="small" type="primary" plain @click="openAddModelDialog"><span class="material-symbols-outlined text-sm mr-1">add</span>添加</el-button>
-                </div>
-                <div v-if="providerModels.length === 0" class="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <span class="material-symbols-outlined text-3xl text-slate-300 mb-2">widgets</span>
-                  <p class="text-sm text-slate-400">尚未添加模型</p>
-                </div>
-                <div v-else class="space-y-3">
-                  <div v-for="(models, groupName) in groupedModels" :key="groupName" class="border border-slate-200 rounded-xl overflow-hidden">
-                    <div class="bg-slate-100/80 px-4 py-2 text-xs font-bold text-slate-500 border-b border-slate-200 flex items-center gap-1.5">
-                      <span class="material-symbols-outlined text-sm text-slate-400">folder_open</span>{{ groupName || '未分组' }}
+              <div class="p-6 space-y-6 flex-1">
+                <div class="bg-slate-50/60 p-5 rounded-xl border border-slate-100 space-y-4">
+                  <div>
+                    <div class="flex justify-between items-center mb-1.5">
+                      <label class="text-sm font-bold text-slate-700">API 密钥</label>
+                      <el-button type="primary" plain size="small" class="!px-3 !h-7" @click="testProviderConnection(activeProvider)" :loading="testingProviderId === activeProvider.id">
+                        <span class="material-symbols-outlined text-xs mr-1">wifi_tethering</span>检测
+                      </el-button>
                     </div>
-                    <div class="divide-y divide-slate-50">
-                      <div v-for="m in models" :key="m.id" class="px-4 py-2.5 flex justify-between items-center hover:bg-blue-50/30 group transition-colors">
-                        <div class="flex items-center gap-3 min-w-0">
-                          <div class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm shrink-0">
-                            <span class="material-symbols-outlined text-slate-500 text-[16px]">smart_toy</span>
-                          </div>
-                          <div class="flex flex-col min-w-0">
-                            <div class="flex items-center gap-2">
-                              <span class="text-sm font-medium text-slate-800 truncate">{{ m.model_name || m.model_id }}</span>
-                              <el-tag v-if="m.is_default" size="small" type="success" effect="dark" round class="!text-[10px] !h-4 !leading-4">默认</el-tag>
+                    <el-input v-model="activeProvider.api_key" type="password" show-password placeholder="sk-..." @change="saveProviderField(activeProvider)" />
+                  </div>
+                  <div>
+                    <label class="text-sm font-bold text-slate-700 mb-1.5 block">API 地址</label>
+                    <el-input v-model="activeProvider.api_url" placeholder="https://api.openai.com/v1/chat/completions" @change="saveProviderField(activeProvider)" />
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-slate-800 flex items-center gap-2">模型 <el-tag size="small" type="primary" round effect="plain">{{ providerModels.length }}</el-tag></h3>
+                    <el-button size="small" type="primary" plain @click="openAddModelDialog"><span class="material-symbols-outlined text-sm mr-1">add</span>添加</el-button>
+                  </div>
+                  <div v-if="providerModels.length === 0" class="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <span class="material-symbols-outlined text-3xl text-slate-300 mb-2">widgets</span>
+                    <p class="text-sm text-slate-400">尚未添加模型</p>
+                  </div>
+                  <div v-else class="space-y-3">
+                    <div v-for="(models, groupName) in groupedModels" :key="groupName" class="border border-slate-200 rounded-xl overflow-hidden">
+                      <div class="bg-slate-100/80 px-4 py-2 text-xs font-bold text-slate-500 border-b border-slate-200 flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-sm text-slate-400">folder_open</span>{{ groupName || '未分组' }}
+                      </div>
+                      <div class="divide-y divide-slate-50">
+                        <div v-for="m in models" :key="m.id" class="px-4 py-2.5 flex justify-between items-center hover:bg-blue-50/30 group transition-colors">
+                          <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm shrink-0">
+                              <span class="material-symbols-outlined text-slate-500 text-[16px]">smart_toy</span>
                             </div>
-                            <span v-if="m.model_name && m.model_name !== m.model_id" class="text-xs text-slate-400 font-mono truncate">{{ m.model_id }}</span>
+                            <div class="flex flex-col min-w-0">
+                              <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium text-slate-800 truncate">{{ m.model_name || m.model_id }}</span>
+                                <el-tag v-if="m.is_default" size="small" type="success" effect="dark" round class="!text-[10px] !h-4 !leading-4">默认</el-tag>
+                              </div>
+                              <span v-if="m.model_name && m.model_name !== m.model_id" class="text-xs text-slate-400 font-mono truncate">{{ m.model_id }}</span>
+                            </div>
                           </div>
-                        </div>
-                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                          <el-button v-if="!m.is_default" size="small" round class="!px-2 !h-6 !text-xs" @click="handleSetDefault(m)">设默认</el-button>
-                          <el-button link size="small" @click="editModel(m)"><span class="material-symbols-outlined text-[16px] text-slate-400 hover:text-blue-500">edit</span></el-button>
-                          <el-button link type="danger" size="small" @click="handleDeleteModel(m)"><span class="material-symbols-outlined text-[16px]">remove</span></el-button>
+                          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <el-button v-if="!m.is_default" size="small" round class="!px-2 !h-6 !text-xs" @click="handleSetDefault(m)">设默认</el-button>
+                            <el-button link size="small" @click="editModel(m)"><span class="material-symbols-outlined text-[16px] text-slate-400 hover:text-blue-500">edit</span></el-button>
+                            <el-button link type="danger" size="small" @click="handleDeleteModel(m)"><span class="material-symbols-outlined text-[16px]">remove</span></el-button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -170,37 +202,37 @@
                 </div>
               </div>
             </div>
+            <div v-else class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
+              <div class="w-20 h-20 mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+                <span class="material-symbols-outlined text-4xl text-slate-300">hub</span>
+              </div>
+              <p class="text-sm text-slate-500 font-medium">请在左侧选择或添加提供商</p>
+            </div>
           </div>
-          <div v-else class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
-            <div class="w-20 h-20 mb-4 rounded-full bg-slate-100 flex items-center justify-center">
-              <span class="material-symbols-outlined text-4xl text-slate-300">hub</span>
-            </div>
-            <p class="text-sm text-slate-500 font-medium">请在左侧选择或添加提供商</p>
-          </div>
-        </div>
-        <!-- 全局网络设置 -->
-        <el-card shadow="never" class="!rounded-xl !border-slate-200 mt-6">
-          <template #header>
-            <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
-              <span class="material-symbols-outlined text-blue-500 text-[18px]">router</span>全局网络设置
-            </div>
-          </template>
-          <el-form :model="networkConfig" label-position="top" size="small" class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-            <div class="col-span-full flex items-center justify-between mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-              <span class="text-sm font-medium text-slate-700">启用 SOCKS 代理</span>
-              <el-switch v-model="networkConfig.proxyEnabled" @change="saveNetworkConfig" />
-            </div>
-            <template v-if="networkConfig.proxyEnabled">
-              <el-form-item label="代理地址"><el-input v-model="networkConfig.proxyUrl" placeholder="127.0.0.1:7890" @change="saveNetworkConfig" /></el-form-item>
-              <el-form-item label="请求超时 (秒)"><el-input-number v-model="networkConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" @change="saveNetworkConfig" /></el-form-item>
-              <el-form-item label="代理账号"><el-input v-model="networkConfig.proxyUsername" @change="saveNetworkConfig" /></el-form-item>
-              <el-form-item label="代理密码"><el-input v-model="networkConfig.proxyPassword" type="password" @change="saveNetworkConfig" /></el-form-item>
+          <!-- 全局网络设置 -->
+          <el-card shadow="never" class="!rounded-xl !border-slate-200 mt-6">
+            <template #header>
+              <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
+                <span class="material-symbols-outlined text-blue-500 text-[18px]">router</span>全局网络设置
+              </div>
             </template>
-            <template v-else>
-              <el-form-item label="请求超时 (秒)"><el-input-number v-model="networkConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" @change="saveNetworkConfig" /></el-form-item>
-            </template>
-          </el-form>
-        </el-card>
+            <el-form :model="networkConfig" label-position="top" size="small" class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+              <div class="col-span-full flex items-center justify-between mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                <span class="text-sm font-medium text-slate-700">启用 SOCKS 代理</span>
+                <el-switch v-model="networkConfig.proxyEnabled" @change="saveNetworkConfig" />
+              </div>
+              <template v-if="networkConfig.proxyEnabled">
+                <el-form-item label="代理地址"><el-input v-model="networkConfig.proxyUrl" placeholder="127.0.0.1:7890" @change="saveNetworkConfig" /></el-form-item>
+                <el-form-item label="请求超时 (秒)"><el-input-number v-model="networkConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" @change="saveNetworkConfig" /></el-form-item>
+                <el-form-item label="代理账号"><el-input v-model="networkConfig.proxyUsername" @change="saveNetworkConfig" /></el-form-item>
+                <el-form-item label="代理密码"><el-input v-model="networkConfig.proxyPassword" type="password" @change="saveNetworkConfig" /></el-form-item>
+              </template>
+              <template v-else>
+                <el-form-item label="请求超时 (秒)"><el-input-number v-model="networkConfig.timeout" :min="10" :max="600" controls-position="right" class="!w-full" @change="saveNetworkConfig" /></el-form-item>
+              </template>
+            </el-form>
+          </el-card>
+        </template>
       </el-tab-pane>
 
       <!-- ========== Prompt 设置 Tab ========== -->
@@ -555,11 +587,12 @@ import { ref, reactive, onMounted, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
-import { resolveUsageFeedback, useAccountContext, usePurchaseDialog } from '@/modules/security/index.js'
+import { AI_MODES, resolveUsageFeedback, useAccountContext, useAiMode, usePurchaseDialog } from '@/modules/security/index.js'
 
 // ===== 多提供商管理 (ISS-060~066) =====
 const activeTab = ref('ai')
 const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const { state: aiModeState, setMode: setAiMode } = useAiMode()
 const { openPurchaseDialog } = usePurchaseDialog()
 const refreshingAccountContext = ref(false)
 const searchProvider = ref('')
@@ -639,6 +672,13 @@ const groupedModels = computed(() => {
 })
 const accountUsage = computed(() => resolveUsageFeedback(accountContextState))
 const accountPackageCards = computed(() => accountContextState.packageCards || [])
+const activeAiMode = computed({
+  get: () => aiModeState.mode,
+  set: (nextMode) => {
+    setAiMode(nextMode)
+  },
+})
+const isGeneralMode = computed(() => activeAiMode.value === AI_MODES.general)
 
 // ===== 颜色映射 =====
 const PROVIDER_COLORS = {

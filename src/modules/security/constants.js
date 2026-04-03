@@ -14,6 +14,7 @@ export const SECURITY_STORAGE_KEYS = {
   userInfo: 'health.auth.userInfo',
   guestMode: 'health.auth.guestMode',
   trialGiftPending: 'health.auth.trialGiftPending',
+  aiMode: 'health.ai.mode',
 }
 
 export const SIGNATURE_MODE = {
