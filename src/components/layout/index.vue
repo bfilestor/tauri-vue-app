@@ -7,7 +7,7 @@
         <div class="w-10 h-10 bg-[#2b8cee] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#2b8cee]/30">
           <span class="material-symbols-outlined">health_and_safety</span>
         </div>
-        <span class="font-bold text-xl tracking-tight text-slate-900">健康管家</span>
+        <span class="font-bold text-xl tracking-tight text-slate-900">{{ displayName }}</span>
       </div>
 
       <!-- 导航菜单 -->
@@ -242,6 +242,38 @@ const menuItems = [
   { path: '/aiqa', title: 'AI 问答', icon: 'smart_toy' },
   { path: '/settings', title: '系统设置', icon: 'settings' },
 ]
+
+
+const getDisplayName = () => {
+  const candidates = [
+    localStorage.getItem('nickname'),
+    localStorage.getItem('nickName'),
+    localStorage.getItem('username'),
+    localStorage.getItem('userName'),
+    localStorage.getItem('name'),
+  ]
+
+  const userInfoRaw = localStorage.getItem('userInfo') || localStorage.getItem('user_info')
+  if (userInfoRaw) {
+    try {
+      const userInfo = JSON.parse(userInfoRaw)
+      candidates.unshift(
+        userInfo?.nickname,
+        userInfo?.nickName,
+        userInfo?.username,
+        userInfo?.userName,
+        userInfo?.name,
+      )
+    } catch (_) {
+      // ignore parse error
+    }
+  }
+
+  return candidates.find(v => typeof v === 'string' && v.trim())?.trim() || '健康用户'
+}
+
+const displayName = computed(() => getDisplayName())
+
 
 const isActive = (path) => {
   return route.path === path
