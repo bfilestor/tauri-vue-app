@@ -256,6 +256,8 @@ import {
   appRequestClient,
   createUsageService,
   getAuthApi,
+  resolveLocalChatScope,
+  resolveLocalMemberScope,
   useAccountContext,
   useAiMode,
   usePurchaseDialog,
@@ -270,6 +272,8 @@ const usageService = createUsageService({
   client: appRequestClient,
   idempotencyKeyFactory: (usageType = 'CHAT') => `usage-${usageType.toLowerCase()}-${Date.now()}`,
 })
+const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
+const buildChatScope = () => resolveLocalChatScope(authApi.getSessionState(), accountContextState)
 
 const precheckingUsage = ref(false)
 const pendingRetryMessage = ref('')
@@ -295,9 +299,17 @@ const loadHistory = async (reset = false) => {
     }
 
     try {
+        const scope = buildMemberScope()
+        if (!scope) {
+            historyRecords.value = []
+            historyHasMore.value = false
+            return
+        }
+
         const data = await invoke('get_ai_analyses_history', {
             page: historyPage.value,
-            size: historySize
+            size: historySize,
+            scope,
         })
 
         const mapped = data.map(item => ({
@@ -354,9 +366,14 @@ const cancelEdit = (record) => {
 
 const saveEdit = async (record) => {
     try {
+        const scope = buildMemberScope()
+        if (!scope) {
+            throw new Error('当前成员未就绪')
+        }
         await invoke('update_ai_analysis_content', {
             id: record.id,
-            content: record.editContent
+            content: record.editContent,
+            scope,
         })
         record.response_content = record.editContent
         record.isEditing = false
@@ -387,7 +404,12 @@ const scrollToBottom = () => {
 
 const loadChatHistory = async () => {
     try {
-        const data = await invoke('get_chat_history', { limit: 50, offset: 0 })
+        const scope = buildChatScope()
+        if (!scope) {
+            chatMessages.value = []
+            return
+        }
+        const data = await invoke('get_chat_history', { limit: 50, offset: 0, scope })
         // Mapped with collapsed state, default expanded for history? or collapsed if long?
         chatMessages.value = data.map(m => ({
             ...m,
@@ -498,7 +520,11 @@ const sendMessageWithGuard = async (text, { clearInputOnSend = false } = {}) => 
     isGenerating.value = true
 
     try {
-        const aiMsgId = await invoke('chat_with_ai', { message: text })
+        const scope = buildChatScope()
+        if (!scope) {
+            throw new Error('当前成员未就绪')
+        }
+        const aiMsgId = await invoke('chat_with_ai', { message: text, scope })
         currentGeneratingId.value = aiMsgId
 
         chatMessages.value.push({
@@ -525,10 +551,14 @@ const sendMessage = async () => {
 
 const clearHistory = async () => {
     try {
+        const scope = buildChatScope()
+        if (!scope) {
+            throw new Error('当前成员未就绪')
+        }
         await ElMessageBox.confirm('确定要清空所有对话记录吗？', '确认操作', {
             type: 'warning'
         })
-        await invoke('clear_chat_history')
+        await invoke('clear_chat_history', { scope })
         chatMessages.value = []
         ElMessage.success('已清空')
     } catch (e) {

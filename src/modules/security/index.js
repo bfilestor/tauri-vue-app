@@ -26,6 +26,7 @@ export { createRequestClient } from './request-client.js'
 export { createMemoryStorage, createStorageAdapter } from './storage.js'
 export { createAuthSessionStore } from './session-store.js'
 export { createAuthApi } from './auth-api.js'
+export { resolveLocalChatScope, resolveLocalMemberScope } from './local-data-scope.js'
 export {
   AUTH_DIALOG_TABS,
   createAuthDialogController,

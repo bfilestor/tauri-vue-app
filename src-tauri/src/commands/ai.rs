@@ -1,3 +1,7 @@
+use super::scope::{
+    resolve_chat_scope, resolve_member_scope, touch_conversation, ChatScopeInput,
+    MemberScopeInput,
+};
 use crate::commands::ocr::OcrParsedItem;
 use crate::db::Database;
 use crate::services::http_client;
@@ -106,6 +110,7 @@ fn extract_text_segments_from_stream_line(line: &str) -> (Vec<String>, bool) {
 #[tauri::command]
 pub async fn start_ai_analysis(
     record_id: String,
+    scope: Option<MemberScopeInput>,
     app: tauri::AppHandle,
     db: tauri::State<'_, Database>,
 ) -> Result<String, String> {
@@ -116,6 +121,7 @@ pub async fn start_ai_analysis(
     let (config, model, ai_prompt, prompt_data, analysis_id) = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+        let scope = resolve_member_scope(conn, scope)?;
 
         // 获取 AI 配置
         let config = http_client::load_ai_config(&conn)?;
@@ -151,8 +157,10 @@ pub async fn start_ai_analysis(
         // 获取当前检查记录的 OCR 数据
         let checkup_date: String = conn
             .query_row(
-                "SELECT checkup_date FROM checkup_records WHERE id = ?1",
-                [&record_id],
+                "SELECT checkup_date
+                 FROM checkup_records
+                 WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
                 |row| row.get(0),
             )
             .map_err(|e| format!("记录不存在: {}", e))?;
@@ -163,13 +171,18 @@ pub async fn start_ai_analysis(
                 "SELECT o.parsed_items, p.name as project_name, o.checkup_date
                  FROM ocr_results o
                  LEFT JOIN checkup_projects p ON o.project_id = p.id
-                 WHERE o.record_id = ?1 AND o.status = 'success'
+                 WHERE o.record_id = ?1
+                   AND o.owner_user_id = ?2
+                   AND o.member_id = ?3
+                   AND o.status = 'success'
                  ORDER BY p.name ASC",
             )
             .map_err(|e| format!("查询OCR结果失败: {}", e))?;
 
         let current_data: Vec<(String, String, String)> = stmt
-            .query_map([&record_id], |row| {
+            .query_map(
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+                |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1).unwrap_or_default(),
@@ -189,13 +202,16 @@ pub async fn start_ai_analysis(
         let mut hist_rec_stmt = conn
             .prepare(
                 "SELECT id, checkup_date FROM checkup_records 
-             WHERE id != ?1 
+             WHERE id != ?1 AND owner_user_id = ?2 AND member_id = ?3
              ORDER BY checkup_date DESC LIMIT 3",
             )
             .map_err(|e| format!("查询历史记录失败: {}", e))?;
 
         let history_records: Vec<(String, String)> = hist_rec_stmt
-            .query_map([&record_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .map_err(|e| format!("查询历史记录失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()
             .unwrap_or_default();
@@ -208,12 +224,17 @@ pub async fn start_ai_analysis(
                     "SELECT o.parsed_items, p.name 
                   FROM ocr_results o
                   LEFT JOIN checkup_projects p ON o.project_id = p.id
-                  WHERE o.record_id = ?1 AND o.status = 'success'",
+                  WHERE o.record_id = ?1
+                    AND o.owner_user_id = ?2
+                    AND o.member_id = ?3
+                    AND o.status = 'success'",
                 )
                 .map_err(|e| format!("查询历史OCR失败: {}", e))?;
 
             let ocr_data: Vec<(String, String)> = ocr_stmt
-                .query_map([&hist_id], |row| {
+                .query_map(
+                    rusqlite::params![&hist_id, &scope.owner_user_id, &scope.member_id],
+                    |row| {
                     Ok((row.get(0)?, row.get(1).unwrap_or_default()))
                 })
                 .map_err(|e| format!("查询历史OCR失败: {}", e))?
@@ -246,11 +267,14 @@ pub async fn start_ai_analysis(
         // 3. 获取上一次成功的 AI 分析建议
         let last_ai_suggestion: Option<String> = conn
             .query_row(
-                "SELECT response_content FROM ai_analyses a 
+            "SELECT response_content FROM ai_analyses a 
              JOIN checkup_records r ON a.record_id = r.id
-             WHERE r.id != ?1 AND a.status = 'success'
+             WHERE r.id != ?1
+               AND a.owner_user_id = ?2
+               AND a.member_id = ?3
+               AND a.status = 'success'
              ORDER BY r.checkup_date DESC, a.created_at DESC LIMIT 1",
-                [&record_id],
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
                 |row| row.get(0),
             )
             .ok();
@@ -287,15 +311,25 @@ pub async fn start_ai_analysis(
         let full_prompt = format!("{}\n\n{}", ai_prompt, prompt_data);
 
         conn.execute(
-            "INSERT INTO ai_analyses (id, record_id, request_prompt, response_content, model_used, status, error_message, created_at)
-             VALUES (?1, ?2, ?3, '', ?4, 'processing', '', ?5)",
-            rusqlite::params![analysis_id, record_id, full_prompt, model, now],
+            "INSERT INTO ai_analyses (id, owner_user_id, member_id, record_id, request_prompt, response_content, model_used, status, error_message, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, '', ?6, 'processing', '', ?7)",
+            rusqlite::params![
+                analysis_id,
+                &scope.owner_user_id,
+                &scope.member_id,
+                record_id,
+                full_prompt,
+                model,
+                now
+            ],
         ).map_err(|e| format!("创建分析记录失败: {}", e))?;
 
         // 更新检查记录状态
         conn.execute(
-            "UPDATE checkup_records SET status = 'ai_processing', updated_at = ?1 WHERE id = ?2",
-            rusqlite::params![now, record_id],
+            "UPDATE checkup_records
+             SET status = 'ai_processing', updated_at = ?1
+             WHERE id = ?2 AND owner_user_id = ?3 AND member_id = ?4",
+            rusqlite::params![now, record_id, &scope.owner_user_id, &scope.member_id],
         )
         .ok();
 
@@ -459,21 +493,26 @@ pub async fn start_ai_analysis(
 #[tauri::command]
 pub fn get_ai_analysis(
     record_id: String,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<Vec<AiAnalysis>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     let mut stmt = conn
         .prepare(
             "SELECT id, record_id, request_prompt, response_content, model_used, status, error_message, created_at
-             FROM ai_analyses WHERE record_id = ?1
+             FROM ai_analyses
+             WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3
              ORDER BY created_at DESC"
         )
         .map_err(|e| format!("查询AI分析结果失败: {}", e))?;
 
     let results = stmt
-        .query_map([&record_id], |row| {
+        .query_map(
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+            |row| {
             Ok(AiAnalysis {
                 id: row.get(0)?,
                 record_id: row.get(1)?,
@@ -539,10 +578,12 @@ pub struct AiAnalysisHistoryItem {
 pub fn get_ai_analyses_history(
     page: i64,
     size: i64,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<Vec<AiAnalysisHistoryItem>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     let offset = (page - 1) * size;
     let mut stmt = conn
@@ -551,13 +592,17 @@ pub fn get_ai_analyses_history(
              FROM ai_analyses a
              JOIN checkup_records r ON a.record_id = r.id
              WHERE a.status = 'success'
+               AND a.owner_user_id = ?1
+               AND a.member_id = ?2
              ORDER BY r.checkup_date DESC, a.created_at DESC
-             LIMIT ?1 OFFSET ?2",
+             LIMIT ?3 OFFSET ?4",
         )
         .map_err(|e| format!("查询失败: {}", e))?;
 
     let results = stmt
-        .query_map(rusqlite::params![size, offset], |row| {
+        .query_map(
+            rusqlite::params![&scope.owner_user_id, &scope.member_id, size, offset],
+            |row| {
             Ok(AiAnalysisHistoryItem {
                 id: row.get(0)?,
                 record_id: row.get(1)?,
@@ -578,14 +623,18 @@ pub fn get_ai_analyses_history(
 pub fn update_ai_analysis_content(
     id: String,
     content: String,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<bool, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     conn.execute(
-        "UPDATE ai_analyses SET response_content = ?1 WHERE id = ?2",
-        rusqlite::params![content, id],
+        "UPDATE ai_analyses
+         SET response_content = ?1
+         WHERE id = ?2 AND owner_user_id = ?3 AND member_id = ?4",
+        rusqlite::params![content, id, &scope.owner_user_id, &scope.member_id],
     )
     .map_err(|e| format!("更新失败: {}", e))?;
 
@@ -605,22 +654,34 @@ pub struct ChatMessage {
 pub fn get_chat_history(
     limit: i64,
     offset: i64,
+    scope: Option<ChatScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<Vec<ChatMessage>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let chat_scope = resolve_chat_scope(conn, scope)?;
 
     // Return DESC order (newest first) for easier pagination
     let mut stmt = conn
         .prepare(
-            "SELECT id, role, content, created_at FROM chat_logs 
+            "SELECT id, role, content, created_at
+             FROM chat_logs
+             WHERE owner_user_id = ?1 AND member_id = ?2 AND conversation_id = ?3
              ORDER BY created_at DESC, role ASC 
-             LIMIT ?1 OFFSET ?2",
+             LIMIT ?4 OFFSET ?5",
         )
         .map_err(|e| format!("查询失败: {}", e))?;
 
     let results = stmt
-        .query_map(rusqlite::params![limit, offset], |row| {
+        .query_map(
+            rusqlite::params![
+                &chat_scope.owner_user_id,
+                &chat_scope.member_id,
+                &chat_scope.conversation_id,
+                limit,
+                offset
+            ],
+            |row| {
             Ok(ChatMessage {
                 id: row.get(0)?,
                 role: row.get(1)?,
@@ -637,12 +698,26 @@ pub fn get_chat_history(
 
 /// 清空聊天历史
 #[tauri::command]
-pub fn clear_chat_history(db: tauri::State<Database>) -> Result<bool, String> {
+pub fn clear_chat_history(
+    scope: Option<ChatScopeInput>,
+    db: tauri::State<Database>,
+) -> Result<bool, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let chat_scope = resolve_chat_scope(conn, scope)?;
 
-    conn.execute("DELETE FROM chat_logs", [])
+    conn.execute(
+        "DELETE FROM chat_logs
+         WHERE owner_user_id = ?1 AND member_id = ?2 AND conversation_id = ?3",
+        rusqlite::params![
+            &chat_scope.owner_user_id,
+            &chat_scope.member_id,
+            &chat_scope.conversation_id
+        ],
+    )
         .map_err(|e| format!("删除失败: {}", e))?;
+
+    touch_conversation(conn, &chat_scope.conversation_id)?;
 
     Ok(true)
 }
@@ -651,6 +726,7 @@ pub fn clear_chat_history(db: tauri::State<Database>) -> Result<bool, String> {
 #[tauri::command]
 pub async fn chat_with_ai(
     message: String,
+    scope: Option<ChatScopeInput>,
     app: tauri::AppHandle,
     db: tauri::State<'_, Database>,
 ) -> Result<String, String> {
@@ -658,9 +734,10 @@ pub async fn chat_with_ai(
     use tauri::Emitter;
 
     // 1. 获取配置和上下文
-    let (config, model, chat_history, system_prompt) = {
+    let (config, model, chat_history, system_prompt, chat_scope) = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+        let chat_scope = resolve_chat_scope(conn, scope)?;
 
         let config = http_client::load_ai_config(&conn)?;
         let model = http_client::get_default_model(&conn);
@@ -695,18 +772,29 @@ pub async fn chat_with_ai(
         // 获取最近 10 条历史记录作为上下文
         let mut stmt = conn
             .prepare(
-                "SELECT role, content FROM chat_logs ORDER BY created_at DESC, role ASC LIMIT 10",
+                "SELECT role, content
+                 FROM chat_logs
+                 WHERE owner_user_id = ?1 AND member_id = ?2 AND conversation_id = ?3
+                 ORDER BY created_at DESC, role ASC
+                 LIMIT 10",
             )
             .map_err(|e| e.to_string())?;
 
         let mut history: Vec<(String, String)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(
+                rusqlite::params![
+                    &chat_scope.owner_user_id,
+                    &chat_scope.member_id,
+                    &chat_scope.conversation_id
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
 
         history.reverse(); // 恢复时间顺序
-        (config, model, history, system_prompt)
+        (config, model, history, system_prompt, chat_scope)
     };
 
     let user_msg_id = uuid::Uuid::new_v4().to_string();
@@ -719,16 +807,32 @@ pub async fn chat_with_ai(
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
         conn.execute(
-            "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'user', ?2, ?3)",
-            rusqlite::params![user_msg_id, message, now],
+            "INSERT INTO chat_logs (id, owner_user_id, member_id, conversation_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'user', ?5, ?6)",
+            rusqlite::params![
+                user_msg_id,
+                &chat_scope.owner_user_id,
+                &chat_scope.member_id,
+                &chat_scope.conversation_id,
+                message,
+                now
+            ],
         )
         .map_err(|e| e.to_string())?;
 
         // 预创建 AI 回复记录 (content empty)
         conn.execute(
-             "INSERT INTO chat_logs (id, role, content, created_at) VALUES (?1, 'assistant', '', ?2)",
-             rusqlite::params![ai_msg_id, now],
+             "INSERT INTO chat_logs (id, owner_user_id, member_id, conversation_id, role, content, created_at)
+              VALUES (?1, ?2, ?3, ?4, 'assistant', '', ?5)",
+             rusqlite::params![
+                ai_msg_id,
+                &chat_scope.owner_user_id,
+                &chat_scope.member_id,
+                &chat_scope.conversation_id,
+                now
+             ],
          ).map_err(|e| e.to_string())?;
+        touch_conversation(conn, &chat_scope.conversation_id)?;
     }
 
     // 3. 构造请求
@@ -751,6 +855,7 @@ pub async fn chat_with_ai(
     });
 
     let ai_msg_id_clone = ai_msg_id.clone();
+    let conversation_id = chat_scope.conversation_id.clone();
 
     // 4. 发送请求
     tokio::spawn(async move {
@@ -847,6 +952,7 @@ pub async fn chat_with_ai(
                         "UPDATE chat_logs SET content = ?1 WHERE id = ?2",
                         rusqlite::params![full_response_content, ai_msg_id_clone],
                     );
+                    let _ = touch_conversation(conn, &conversation_id);
                 }
             }
         }

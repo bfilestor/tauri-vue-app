@@ -118,7 +118,7 @@
 import { ref, onMounted, onUnmounted, nextTick, watch, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
-import { useAccountContext } from '@/modules/security/index.js'
+import { getAuthApi, resolveLocalMemberScope, useAccountContext } from '@/modules/security/index.js'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import {
@@ -130,7 +130,9 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, MarkLineComponent, LegendComponent, CanvasRenderer])
+const authApi = getAuthApi()
 const { state: accountContextState } = useAccountContext()
+const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
 
 // 项目列表
 const projects = ref([])
@@ -214,7 +216,13 @@ const loadTrends = async () => {
   if (!selectedProjectId.value) return
   loading.value = true
   try {
-    const data = await invoke('get_project_trends', { projectId: selectedProjectId.value })
+    const scope = buildMemberScope()
+    if (!scope) {
+      trendData.value = []
+      loading.value = false
+      return
+    }
+    const data = await invoke('get_project_trends', { projectId: selectedProjectId.value, scope })
     trendData.value = [data]
     loading.value = false // 先结束加载状态，让 DOM 渲染
     await nextTick()
@@ -229,7 +237,13 @@ const loadAllTrends = async () => {
   loading.value = true
   selectedProjectId.value = ''
   try {
-    const data = await invoke('get_all_trends')
+    const scope = buildMemberScope()
+    if (!scope) {
+      trendData.value = []
+      loading.value = false
+      return
+    }
+    const data = await invoke('get_all_trends', { scope })
     trendData.value = data
     loading.value = false // 先结束加载状态，让 DOM 渲染
     await nextTick()

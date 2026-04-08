@@ -1,4 +1,5 @@
 use super::AppDir;
+use super::scope::{resolve_member_scope, MemberScopeInput};
 use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -30,11 +31,13 @@ pub struct UploadFileInput {
 #[tauri::command]
 pub fn upload_files(
     files: Vec<UploadFileInput>,
+    scope: Option<MemberScopeInput>,
     db: State<Database>,
     app_dir: State<AppDir>,
 ) -> Result<Vec<CheckupFile>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
     let now = chrono::Local::now().to_rfc3339();
     let mut result = Vec::new();
 
@@ -49,6 +52,27 @@ pub fn upload_files(
                 |row| row.get(0),
             )
             .map_err(|e| format!("项目不存在: {}", e))?;
+
+        let record_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM checkup_records
+                    WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3
+                )",
+                rusqlite::params![
+                    &file_input.record_id,
+                    &scope.owner_user_id,
+                    &scope.member_id
+                ],
+                |row| row.get::<_, i32>(0),
+            )
+            .map_err(|e| format!("校验检查记录失败: {}", e))?
+            == 1;
+
+        if !record_exists {
+            return Err("检查记录不存在或不属于当前成员".to_string());
+        }
 
         // 构建存储路径: pictures/<项目名>/<日期>/<文件名>
         let store_dir = app_dir
@@ -86,9 +110,20 @@ pub fn upload_files(
 
         // 插入数据库
         conn.execute(
-            "INSERT INTO checkup_files (id, record_id, project_id, original_filename, stored_path, file_size, mime_type, uploaded_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, file_input.record_id, file_input.project_id, file_input.filename, relative_path, file_size, mime_type, now],
+            "INSERT INTO checkup_files (id, owner_user_id, member_id, record_id, project_id, original_filename, stored_path, file_size, mime_type, uploaded_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                id,
+                &scope.owner_user_id,
+                &scope.member_id,
+                file_input.record_id,
+                file_input.project_id,
+                file_input.filename,
+                relative_path,
+                file_size,
+                mime_type,
+                now
+            ],
         )
         .map_err(|e| format!("保存文件记录失败: {}", e))?;
 
@@ -108,8 +143,10 @@ pub fn upload_files(
     // 更新检查记录状态
     if let Some(first) = result.first() {
         conn.execute(
-            "UPDATE checkup_records SET status = 'pending_ocr', updated_at = ?1 WHERE id = ?2 AND status = 'pending_upload'",
-            rusqlite::params![now, first.record_id],
+            "UPDATE checkup_records
+             SET status = 'pending_ocr', updated_at = ?1
+             WHERE id = ?2 AND owner_user_id = ?3 AND member_id = ?4 AND status = 'pending_upload'",
+            rusqlite::params![now, first.record_id, &scope.owner_user_id, &scope.member_id],
         ).ok();
     }
 
@@ -118,21 +155,28 @@ pub fn upload_files(
 
 /// 获取某次检查记录的所有文件
 #[tauri::command]
-pub fn list_files(record_id: String, db: State<Database>) -> Result<Vec<CheckupFile>, String> {
+pub fn list_files(
+    record_id: String,
+    scope: Option<MemberScopeInput>,
+    db: State<Database>,
+) -> Result<Vec<CheckupFile>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
     let mut stmt = conn
         .prepare(
             "SELECT f.id, f.record_id, f.project_id, p.name, f.original_filename, f.stored_path, f.file_size, f.mime_type, f.uploaded_at
              FROM checkup_files f
              LEFT JOIN checkup_projects p ON f.project_id = p.id
-             WHERE f.record_id = ?1
+             WHERE f.record_id = ?1 AND f.owner_user_id = ?2 AND f.member_id = ?3
              ORDER BY p.name ASC, f.uploaded_at ASC"
         )
         .map_err(|e| format!("查询文件失败: {}", e))?;
 
     let files = stmt
-        .query_map([&record_id], |row| {
+        .query_map(
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+            |row| {
             Ok(CheckupFile {
                 id: row.get(0)?,
                 record_id: row.get(1)?,
@@ -156,16 +200,20 @@ pub fn list_files(record_id: String, db: State<Database>) -> Result<Vec<CheckupF
 #[tauri::command]
 pub fn read_file_base64(
     file_id: String,
+    scope: Option<MemberScopeInput>,
     db: State<Database>,
     app_dir: State<AppDir>,
 ) -> Result<String, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     let (stored_path, mime_type): (String, String) = conn
         .query_row(
-            "SELECT stored_path, mime_type FROM checkup_files WHERE id = ?1",
-            [&file_id],
+            "SELECT stored_path, mime_type
+             FROM checkup_files
+             WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|e| format!("文件不存在: {}", e))?;
@@ -181,27 +229,44 @@ pub fn read_file_base64(
 #[tauri::command]
 pub fn delete_file(
     file_id: String,
+    scope: Option<MemberScopeInput>,
     db: State<Database>,
     app_dir: State<AppDir>,
 ) -> Result<bool, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     let stored_path: String = conn
         .query_row(
-            "SELECT stored_path FROM checkup_files WHERE id = ?1",
-            [&file_id],
+            "SELECT stored_path
+             FROM checkup_files
+             WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("文件不存在: {}", e))?;
 
     // 删除关联的 OCR 结果和指标值
-    conn.execute("DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1)", [&file_id]).ok();
-    conn.execute("DELETE FROM ocr_results WHERE file_id = ?1", [&file_id])
+    conn.execute(
+        "DELETE FROM indicator_values
+         WHERE ocr_result_id IN (
+            SELECT id FROM ocr_results WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3
+         )",
+        rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
+    )
+    .ok();
+    conn.execute(
+        "DELETE FROM ocr_results WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+        rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
+    )
         .ok();
 
     // 删除数据库记录
-    conn.execute("DELETE FROM checkup_files WHERE id = ?1", [&file_id])
+    conn.execute(
+        "DELETE FROM checkup_files WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+        rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
+    )
         .map_err(|e| format!("删除文件记录失败: {}", e))?;
 
     // 删除物理文件

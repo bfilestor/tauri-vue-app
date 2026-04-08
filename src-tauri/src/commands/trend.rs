@@ -1,3 +1,4 @@
+use super::scope::{resolve_member_scope, MemberScopeInput};
 use crate::db::Database;
 use serde::Serialize;
 
@@ -29,10 +30,12 @@ pub struct ProjectTrend {
 #[tauri::command]
 pub fn get_project_trends(
     project_id: String,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<ProjectTrend, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     // 获取项目名称
     let project_name: String = conn
@@ -73,13 +76,18 @@ pub fn get_project_trends(
             .prepare(
                 "SELECT checkup_date, value, value_text, is_abnormal
                  FROM indicator_values
-                 WHERE indicator_id = ?1 AND project_id = ?2
+                 WHERE indicator_id = ?1
+                   AND project_id = ?2
+                   AND owner_user_id = ?3
+                   AND member_id = ?4
                  ORDER BY checkup_date ASC",
             )
             .map_err(|e| format!("查询指标值失败: {}", e))?;
 
         let data_points: Vec<TrendDataPoint> = val_stmt
-            .query_map(rusqlite::params![ind_id, project_id], |row| {
+            .query_map(
+                rusqlite::params![ind_id, project_id, &scope.owner_user_id, &scope.member_id],
+                |row| {
                 Ok(TrendDataPoint {
                     checkup_date: row.get(0)?,
                     value: row.get(1)?,
@@ -109,9 +117,13 @@ pub fn get_project_trends(
 
 /// 获取所有项目的概要趋势数据
 #[tauri::command]
-pub fn get_all_trends(db: tauri::State<Database>) -> Result<Vec<ProjectTrend>, String> {
+pub fn get_all_trends(
+    scope: Option<MemberScopeInput>,
+    db: tauri::State<Database>,
+) -> Result<Vec<ProjectTrend>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     // 获取所有活跃项目
     let mut proj_stmt = conn
@@ -133,7 +145,15 @@ pub fn get_all_trends(db: tauri::State<Database>) -> Result<Vec<ProjectTrend>, S
 
     let mut result = Vec::new();
     for (pid, _pname) in &projects {
-        match get_project_trends(pid.clone(), db.clone()) {
+        match get_project_trends(
+            pid.clone(),
+            Some(MemberScopeInput {
+                owner_user_id: Some(scope.owner_user_id.clone()),
+                member_id: Some(scope.member_id.clone()),
+                member_name: Some(scope.member_name.clone()),
+            }),
+            db.clone(),
+        ) {
             Ok(pt) => result.push(pt),
             Err(e) => log::error!("获取项目趋势失败: {}", e),
         }

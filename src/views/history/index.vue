@@ -136,9 +136,11 @@
 import { ref, onMounted, onActivated, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
-import { useAccountContext } from '@/modules/security/index.js'
+import { getAuthApi, resolveLocalMemberScope, useAccountContext } from '@/modules/security/index.js'
 
+const authApi = getAuthApi()
 const { state: accountContextState } = useAccountContext()
+const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
 
 // ===== 历史记录 =====
 const records = ref([])
@@ -159,10 +161,18 @@ const loadData = async (reset = false) => {
   }
 
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      records.value = []
+      hasMore.value = false
+      return
+    }
+
     const offset = (currentPage.value - 1) * pageSize
     const data = await invoke('get_history_timeline', { 
         limit: pageSize, 
-        offset: offset 
+        offset: offset,
+        scope,
     })
     
     const mappedData = data.map((item) => ({

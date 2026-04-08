@@ -428,6 +428,7 @@ import {
   appRequestClient,
   createUsageService,
   getAuthApi,
+  resolveLocalMemberScope,
   useAccountContext,
   useAiMode,
   usePurchaseDialog,
@@ -447,6 +448,7 @@ const usagePrechecking = ref(false)
 const usageCheckingType = ref('')
 const usageCheckingRecordId = ref('')
 const pendingUsageAction = ref(null)
+const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
 
 // ===== 检查记录 =====
 const records = ref([])
@@ -476,12 +478,20 @@ const loadRecords = async (reset = false) => {
   if (!reset) loadingMore.value = true
 
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      records.value = []
+      hasMore.value = false
+      return
+    }
+
     const offset = (currentPage.value - 1) * pageSize.value
     console.log(`Loading records: limit=${pageSize.value}, offset=${offset}`)
     
     const newRecords = await invoke('list_records', { 
         limit: pageSize.value, 
-        offset: offset 
+        offset: offset,
+        scope,
     })
     
     // 判断是否有更多数据（简单的判断：如果返回数量小于pageSize，说明没有更多了）
@@ -515,11 +525,18 @@ const createRecord = async () => {
   }
   creating.value = true
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      ElMessage.warning('当前成员未就绪，请稍后再试')
+      return
+    }
+
     await invoke('create_record', {
       input: {
         checkup_date: newRecordDate.value,
         notes: newRecordNotes.value || null,
-      }
+      },
+      scope,
     })
     ElMessage.success('检查记录创建成功')
     showCreateDialog.value = false
@@ -539,12 +556,18 @@ const createRecord = async () => {
 
 const handleDeleteRecord = async (record) => {
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      ElMessage.warning('当前成员未就绪，请稍后再试')
+      return
+    }
+
     await ElMessageBox.confirm(
       `确定要删除 ${record.checkup_date} 的检查记录吗？\n该操作将同时删除所有关联文件、OCR 结果和 AI 分析。`,
       '确认删除',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
-    await invoke('delete_record', { id: record.id })
+    await invoke('delete_record', { id: record.id, scope })
     ElMessage.success('记录已删除')
     if (expandedId.value === record.id) expandedId.value = null
     await loadRecords(true)
@@ -619,6 +642,12 @@ const doUpload = async (record) => {
   }
   uploading.value = true
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      ElMessage.warning('当前成员未就绪，请稍后再试')
+      return
+    }
+
     const files = pendingFiles.value.map(f => ({
       record_id: record.id,
       project_id: selectedProjectId.value,
@@ -626,7 +655,7 @@ const doUpload = async (record) => {
       file_data: f.base64,
       filename: f.name,
     }))
-    await invoke('upload_files', { files })
+    await invoke('upload_files', { files, scope })
     ElMessage.success(`${files.length} 个文件上传成功`)
     pendingFiles.value = []
     selectedFileCategoryId.value = selectedProjectId.value || ALL_CATEGORY_VALUE
@@ -650,11 +679,17 @@ const filteredCurrentFiles = computed(() => {
 
 const loadFiles = async (recordId) => {
   try {
-    const files = await invoke('list_files', { recordId })
+    const scope = buildMemberScope()
+    if (!scope) {
+      currentFiles.value = []
+      return
+    }
+
+    const files = await invoke('list_files', { recordId, scope })
     // 生成缩略图
     for (const f of files) {
       try {
-        f._thumbnail = await invoke('read_file_base64', { fileId: f.id })
+        f._thumbnail = await invoke('read_file_base64', { fileId: f.id, scope })
       } catch {
         f._thumbnail = null
       }
@@ -679,10 +714,16 @@ const fileGroups = computed(() => {
 
 const handleDeleteFile = async (file) => {
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      ElMessage.warning('当前成员未就绪，请稍后再试')
+      return
+    }
+
     await ElMessageBox.confirm(`确定要删除文件「${file.original_filename}」吗？`, '确认删除', {
       type: 'warning'
     })
-    await invoke('delete_file', { fileId: file.id })
+    await invoke('delete_file', { fileId: file.id, scope })
     ElMessage.success('文件已删除')
     if (expandedId.value) await loadFiles(expandedId.value)
     await loadRecords(true)
@@ -701,7 +742,11 @@ const previewFile = async (file) => {
   previewSrc.value = ''
   showPreview.value = true
   try {
-    previewSrc.value = file._thumbnail || await invoke('read_file_base64', { fileId: file.id })
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪')
+    }
+    previewSrc.value = file._thumbnail || await invoke('read_file_base64', { fileId: file.id, scope })
   } catch (e) {
     ElMessage.error('图片加载失败: ' + e)
   }
@@ -726,7 +771,12 @@ const stopOcrStatusPolling = () => {
 
 const pollOcrStatusOnce = async (recordId) => {
   try {
-    const status = await invoke('get_ocr_status', { recordId, record_id: recordId })
+    const scope = buildMemberScope()
+    if (!scope) {
+      return
+    }
+
+    const status = await invoke('get_ocr_status', { recordId, record_id: recordId, scope })
     if (ocrProgress.record_id !== recordId) return
 
     const totalFiles = Number(status.total_files || 0)
@@ -868,7 +918,11 @@ const executeStartOcr = async (record) => {
   ocrProgress.current_file = ''
 
   try {
-    await invoke('start_ocr', { recordId: record.id })
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪')
+    }
+    await invoke('start_ocr', { recordId: record.id, scope })
     startOcrStatusPolling(record.id)
     ElMessage.info('OCR 识别已启动，请稍候...')
   } catch (e) {
@@ -897,7 +951,11 @@ const executeStartAiAnalysis = async (record) => {
   aiStreamRecordId.value = record.id
 
   try {
-    await invoke('start_ai_analysis', { recordId: record.id })
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪')
+    }
+    await invoke('start_ai_analysis', { recordId: record.id, scope })
     ElMessage.info('AI 分析已启动，请稍候...')
   } catch (e) {
     aiLoading.value = false
@@ -959,9 +1017,13 @@ const viewOcrResults = async (record) => {
   console.log('Record:', record)
   currentViewRecord.value = record
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪')
+    }
     console.log('Invoking get_ocr_results with recordId:', record.id)
     // 尝试同时传递 recordId 和 record_id 以兼容 Tauri 的参数映射
-    ocrResults.value = await invoke('get_ocr_results', { recordId: record.id, record_id: record.id })
+    ocrResults.value = await invoke('get_ocr_results', { recordId: record.id, record_id: record.id, scope })
     console.log('get_ocr_results returned:', ocrResults.value)
     
     if (!ocrResults.value) {
@@ -989,7 +1051,11 @@ const handleRetryOcr = async (ocrItem) => {
     ocrItem.status = 'processing'
     ocrItem.error_message = '正在请求重试...'
     try {
-        await invoke('retry_ocr', { ocrId: ocrItem.id })
+        const scope = buildMemberScope()
+        if (!scope) {
+          throw new Error('当前成员未就绪')
+        }
+        await invoke('retry_ocr', { ocrId: ocrItem.id, scope })
     } catch (e) {
         ocrItem.status = 'failed'
         ocrItem.error_message = '重试启动失败: ' + e
@@ -1061,6 +1127,10 @@ const handleEditOcrItem = (row, ocr) => {
 const saveOcrItem = async () => {
     savingOcrItem.value = true
     try {
+        const scope = buildMemberScope()
+        if (!scope) {
+          throw new Error('当前成员未就绪')
+        }
         await invoke('update_ocr_item', {
             ocrId: editingOcrId.value,
             index: editingIndex.value,
@@ -1070,7 +1140,8 @@ const saveOcrItem = async () => {
                 unit: editForm.unit,
                 reference_range: editForm.reference_range,
                 is_abnormal: editForm.is_abnormal
-            }
+            },
+            scope,
         })
         ElMessage.success('更新成功')
         showEditDialog.value = false
@@ -1091,7 +1162,11 @@ const aiResults = ref([])
 
 const viewAiResult = async (record) => {
   try {
-    aiResults.value = await invoke('get_ai_analysis', { recordId: record.id })
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪')
+    }
+    aiResults.value = await invoke('get_ai_analysis', { recordId: record.id, scope })
     showAiDialog.value = true
   } catch (e) {
     ElMessage.error('加载AI分析结果失败: ' + e)

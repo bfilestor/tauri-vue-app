@@ -1,3 +1,4 @@
+use super::scope::{resolve_member_scope, MemberScopeInput};
 use crate::db::Database;
 use crate::services::http_client;
 use serde::{Deserialize, Serialize};
@@ -150,6 +151,7 @@ fn log_response_debug(tag: &str, status: reqwest::StatusCode, response_body: &st
 #[tauri::command]
 pub async fn start_ocr(
     record_id: String,
+    scope: Option<MemberScopeInput>,
     app: tauri::AppHandle,
     db: tauri::State<'_, Database>,
     app_dir: tauri::State<'_, super::AppDir>,
@@ -157,15 +159,18 @@ pub async fn start_ocr(
     use tauri::Emitter;
 
     // 1. 查询记录和关联的文件
-    let (files, checkup_date, config, model, ocr_prompt, indicators_map) = {
+    let (files, checkup_date, config, model, ocr_prompt, indicators_map, scope) = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+        let scope = resolve_member_scope(conn, scope)?;
 
         // 获取检查日期
         let checkup_date: String = conn
             .query_row(
-                "SELECT checkup_date FROM checkup_records WHERE id = ?1",
-                [&record_id],
+                "SELECT checkup_date
+                 FROM checkup_records
+                 WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
                 |row| row.get(0),
             )
             .map_err(|e| format!("记录不存在: {}", e))?;
@@ -176,13 +181,15 @@ pub async fn start_ocr(
                 "SELECT f.id, f.record_id, f.project_id, f.original_filename, f.stored_path, f.mime_type, p.name
                  FROM checkup_files f
                  LEFT JOIN checkup_projects p ON f.project_id = p.id
-                 WHERE f.record_id = ?1
+                 WHERE f.record_id = ?1 AND f.owner_user_id = ?2 AND f.member_id = ?3
                  ORDER BY p.name ASC, f.uploaded_at ASC"
             )
             .map_err(|e| format!("查询文件失败: {}", e))?;
 
         let files: Vec<(String, String, String, String, String, String, String)> = stmt
-            .query_map([&record_id], |row| {
+            .query_map(
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+                |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -224,7 +231,7 @@ pub async fn start_ocr(
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("解析指标数据失败: {}", e))?;
 
-        (files, checkup_date, config, model, ocr_prompt, indicators)
+        (files, checkup_date, config, model, ocr_prompt, indicators, scope)
     };
 
     // 更新状态为 ocr_processing
@@ -233,8 +240,10 @@ pub async fn start_ocr(
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
         let now = chrono::Local::now().to_rfc3339();
         conn.execute(
-            "UPDATE checkup_records SET status = 'ocr_processing', updated_at = ?1 WHERE id = ?2",
-            rusqlite::params![now, record_id],
+            "UPDATE checkup_records
+             SET status = 'ocr_processing', updated_at = ?1
+             WHERE id = ?2 AND owner_user_id = ?3 AND member_id = ?4",
+            rusqlite::params![now, record_id, &scope.owner_user_id, &scope.member_id],
         )
         .ok();
     }
@@ -299,6 +308,8 @@ pub async fn start_ocr(
                         file_id,
                         &project_id,
                         &checkup_date,
+                        &scope.owner_user_id,
+                        &scope.member_id,
                         &format!("读取文件失败: {}", e),
                     );
                     continue;
@@ -361,6 +372,8 @@ pub async fn start_ocr(
                         file_id,
                         &project_id,
                         &checkup_date,
+                        &scope.owner_user_id,
+                        &scope.member_id,
                         &err_msg,
                     );
                     continue;
@@ -380,6 +393,8 @@ pub async fn start_ocr(
                     file_id,
                     &project_id,
                     &checkup_date,
+                    &scope.owner_user_id,
+                    &scope.member_id,
                     &err_msg,
                 );
                 continue;
@@ -397,6 +412,8 @@ pub async fn start_ocr(
                         file_id,
                         &project_id,
                         &checkup_date,
+                        &scope.owner_user_id,
+                        &scope.member_id,
                         &err_msg,
                     );
                     continue;
@@ -418,19 +435,35 @@ pub async fn start_ocr(
                 if let Ok(conn_guard) = db_state.conn.lock() {
                     if let Some(conn) = conn_guard.as_ref() {
                         let _: Result<usize, _> = conn.execute(
-                        "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'success', '', ?8)",
-                        rusqlite::params![ocr_id, file_id, record_id_clone, project_id, checkup_date, content, parsed_items_str, now],
+                        "INSERT INTO ocr_results (id, owner_user_id, member_id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'success', '', ?10)",
+                        rusqlite::params![
+                            ocr_id,
+                            &scope.owner_user_id,
+                            &scope.member_id,
+                            file_id,
+                            record_id_clone,
+                            project_id,
+                            checkup_date,
+                            content,
+                            parsed_items_str,
+                            now
+                        ],
                     );
 
                         // 清理旧记录
                         let _: Result<usize, _> = conn.execute(
-                        "DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1 AND id != ?2)",
-                        [&file_id, &ocr_id], 
+                        "DELETE FROM indicator_values
+                         WHERE ocr_result_id IN (
+                            SELECT id FROM ocr_results
+                            WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4
+                         )",
+                        rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id], 
                     );
                         let _: Result<usize, _> = conn.execute(
-                            "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
-                            [&file_id, &ocr_id],
+                            "DELETE FROM ocr_results
+                             WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4",
+                            rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id],
                         );
 
                         // 将解析出的指标值写入 indicator_values
@@ -444,11 +477,21 @@ pub async fn start_ocr(
                                 let value: Option<f64> = item.value.parse().ok();
                                 let iv_id = uuid::Uuid::new_v4().to_string();
                                 let _: Result<usize, _> = conn.execute(
-                                "INSERT INTO indicator_values (id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
-                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                                "INSERT INTO indicator_values (id, owner_user_id, member_id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
+                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                                 rusqlite::params![
-                                    iv_id, ocr_id, record_id_clone, project_id, indicator_id,
-                                    checkup_date, value, item.value, item.is_abnormal as i32, now
+                                    iv_id,
+                                    &scope.owner_user_id,
+                                    &scope.member_id,
+                                    ocr_id,
+                                    record_id_clone,
+                                    project_id,
+                                    indicator_id,
+                                    checkup_date,
+                                    value,
+                                    item.value,
+                                    item.is_abnormal as i32,
+                                    now
                                 ],
                             );
                             }
@@ -471,8 +514,16 @@ pub async fn start_ocr(
                         "pending_ocr"
                     };
                     let _: Result<usize, _> = conn.execute(
-                        "UPDATE checkup_records SET status = ?1, updated_at = ?2 WHERE id = ?3",
-                        rusqlite::params![new_status, now, record_id_clone],
+                        "UPDATE checkup_records
+                         SET status = ?1, updated_at = ?2
+                         WHERE id = ?3 AND owner_user_id = ?4 AND member_id = ?5",
+                        rusqlite::params![
+                            new_status,
+                            now,
+                            record_id_clone,
+                            &scope.owner_user_id,
+                            &scope.member_id
+                        ],
                     );
                 }
             }
@@ -498,6 +549,7 @@ pub async fn start_ocr(
 #[tauri::command]
 pub async fn retry_ocr(
     ocr_id: String,
+    scope: Option<MemberScopeInput>,
     app: tauri::AppHandle,
     db: tauri::State<'_, Database>,
     app_dir: tauri::State<'_, super::AppDir>,
@@ -505,16 +557,19 @@ pub async fn retry_ocr(
     use tauri::Emitter;
 
     // 1. 查询必要信息
-    let (file_info, record_id, checkup_date, config, model, ocr_prompt, indicators_map) =
+    let (file_info, record_id, checkup_date, config, model, ocr_prompt, indicators_map, scope) =
         {
             let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
             let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+            let scope = resolve_member_scope(conn, scope)?;
 
             // 查询 OCR 记录关联的信息
             let (file_id, record_id, project_id) = conn
                 .query_row(
-                    "SELECT file_id, record_id, project_id FROM ocr_results WHERE id = ?1",
-                    [&ocr_id],
+                    "SELECT file_id, record_id, project_id
+                     FROM ocr_results
+                     WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+                    rusqlite::params![&ocr_id, &scope.owner_user_id, &scope.member_id],
                     |row| {
                         Ok((
                             row.get::<_, String>(0)?,
@@ -528,8 +583,10 @@ pub async fn retry_ocr(
             // 查询日期
             let checkup_date: String = conn
                 .query_row(
-                    "SELECT checkup_date FROM checkup_records WHERE id = ?1",
-                    [&record_id],
+                    "SELECT checkup_date
+                     FROM checkup_records
+                     WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+                    rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
                     |row| row.get(0),
                 )
                 .unwrap_or_default();
@@ -540,8 +597,8 @@ pub async fn retry_ocr(
                     "SELECT f.original_filename, f.stored_path, f.mime_type, p.name
              FROM checkup_files f
              LEFT JOIN checkup_projects p ON f.project_id = p.id
-             WHERE f.id = ?1",
-                    [&file_id],
+             WHERE f.id = ?1 AND f.owner_user_id = ?2 AND f.member_id = ?3",
+                    rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
                     |row| {
                         Ok((
                             row.get::<_, String>(0)?,
@@ -582,6 +639,7 @@ pub async fn retry_ocr(
                 model,
                 ocr_prompt,
                 indicators,
+                scope,
             )
         };
 
@@ -597,21 +655,35 @@ pub async fn retry_ocr(
             if let Some(conn) = conn_guard.as_ref() {
                 let now = chrono::Local::now().to_rfc3339();
                 let _: Result<usize, _> = conn.execute(
-                 "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
-                  VALUES (?1, ?2, ?3, ?4, ?5, '', '[]', 'processing', '', ?6)",
-                 rusqlite::params![ocr_id_clone, file_id, record_id, project_id, checkup_date, now],
+                 "INSERT INTO ocr_results (id, owner_user_id, member_id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
+                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '[]', 'processing', '', ?8)",
+                 rusqlite::params![
+                    ocr_id_clone,
+                    &scope.owner_user_id,
+                    &scope.member_id,
+                    file_id,
+                    record_id,
+                    project_id,
+                    checkup_date,
+                    now
+                 ],
              );
 
                 // 清理该文件的旧 OCR 记录 (只保留当前新创建的)
                 // 1. 删除旧记录关联的指标值
                 let _: Result<usize, _> = conn.execute(
-                 "DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1 AND id != ?2)",
-                 [&file_id, &ocr_id_clone], 
+                 "DELETE FROM indicator_values
+                  WHERE ocr_result_id IN (
+                    SELECT id FROM ocr_results
+                    WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4
+                  )",
+                 rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id_clone], 
              );
                 // 2. 删除旧 OCR 记录
                 let _: Result<usize, _> = conn.execute(
-                    "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
-                    [&file_id, &ocr_id_clone],
+                    "DELETE FROM ocr_results
+                     WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4",
+                    rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id_clone],
                 );
             }
         }
@@ -735,9 +807,22 @@ pub async fn retry_ocr(
                             let value: Option<f64> = item.value.parse().ok();
                             let iv_id = uuid::Uuid::new_v4().to_string();
                             let _: Result<usize, _> = conn.execute(
-                             "INSERT INTO indicator_values (id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
-                              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                             rusqlite::params![iv_id, ocr_id_clone, record_id_clone, project_id, indicator_id, checkup_date, value, item.value, item.is_abnormal as i32, now],
+                             "INSERT INTO indicator_values (id, owner_user_id, member_id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
+                              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                             rusqlite::params![
+                                iv_id,
+                                &scope.owner_user_id,
+                                &scope.member_id,
+                                ocr_id_clone,
+                                record_id_clone,
+                                project_id,
+                                indicator_id,
+                                checkup_date,
+                                value,
+                                item.value,
+                                item.is_abnormal as i32,
+                                now
+                             ],
                          );
                         }
                     }
@@ -781,6 +866,8 @@ fn save_ocr_error(
     file_id: &str,
     project_id: &str,
     checkup_date: &str,
+    owner_user_id: &str,
+    member_id: &str,
     error_msg: &str,
 ) {
     if let Some(db_state) = app.try_state::<Database>() {
@@ -789,19 +876,34 @@ fn save_ocr_error(
                 let ocr_id = uuid::Uuid::new_v4().to_string();
                 let now = chrono::Local::now().to_rfc3339();
                 let _: Result<usize, _> = conn.execute(
-                "INSERT INTO ocr_results (id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, '', '[]', 'failed', ?6, ?7)",
-                rusqlite::params![ocr_id, file_id, record_id, project_id, checkup_date, error_msg, now],
+                "INSERT INTO ocr_results (id, owner_user_id, member_id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '[]', 'failed', ?8, ?9)",
+                rusqlite::params![
+                    ocr_id,
+                    owner_user_id,
+                    member_id,
+                    file_id,
+                    record_id,
+                    project_id,
+                    checkup_date,
+                    error_msg,
+                    now
+                ],
             );
 
                 // 清理旧记录
                 let _: Result<usize, _> = conn.execute(
-                "DELETE FROM indicator_values WHERE ocr_result_id IN (SELECT id FROM ocr_results WHERE file_id = ?1 AND id != ?2)",
-                [file_id, &ocr_id], 
+                "DELETE FROM indicator_values
+                 WHERE ocr_result_id IN (
+                    SELECT id FROM ocr_results
+                    WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4
+                 )",
+                rusqlite::params![file_id, owner_user_id, member_id, &ocr_id], 
             );
                 let _: Result<usize, _> = conn.execute(
-                    "DELETE FROM ocr_results WHERE file_id = ?1 AND id != ?2",
-                    [file_id, &ocr_id],
+                    "DELETE FROM ocr_results
+                     WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4",
+                    rusqlite::params![file_id, owner_user_id, member_id, &ocr_id],
                 );
             }
         }
@@ -814,15 +916,19 @@ pub fn update_ocr_item(
     ocr_id: String,
     index: usize,
     item: OcrParsedItem,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<(), String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     // 1. 获取当前数据
     let (parsed_items_str, project_id, record_id, checkup_date): (String, String, String, String) = conn.query_row(
-        "SELECT parsed_items, project_id, record_id, checkup_date FROM ocr_results WHERE id = ?1",
-        [&ocr_id],
+        "SELECT parsed_items, project_id, record_id, checkup_date
+         FROM ocr_results
+         WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+        rusqlite::params![&ocr_id, &scope.owner_user_id, &scope.member_id],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
     ).map_err(|e| format!("OCR记录不存在: {}", e))?;
 
@@ -873,9 +979,22 @@ pub fn update_ocr_item(
             let value: Option<f64> = item.value.parse().ok();
             let iv_id = uuid::Uuid::new_v4().to_string();
             let _: Result<usize, _> = conn.execute(
-                 "INSERT INTO indicator_values (id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
-                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                 rusqlite::params![iv_id, ocr_id, record_id, project_id, indicator_id, checkup_date, value, item.value, item.is_abnormal as i32, now],
+                 "INSERT INTO indicator_values (id, owner_user_id, member_id, ocr_result_id, record_id, project_id, indicator_id, checkup_date, value, value_text, is_abnormal, created_at)
+                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 rusqlite::params![
+                    iv_id,
+                    &scope.owner_user_id,
+                    &scope.member_id,
+                    ocr_id,
+                    record_id,
+                    project_id,
+                    indicator_id,
+                    checkup_date,
+                    value,
+                    item.value,
+                    item.is_abnormal as i32,
+                    now
+                 ],
              );
         }
     }
@@ -887,47 +1006,49 @@ pub fn update_ocr_item(
 #[tauri::command]
 pub fn get_ocr_status(
     record_id: String,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<serde_json::Value, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     let total_files: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM checkup_files WHERE record_id = ?1",
-            [&record_id],
+            "SELECT COUNT(*) FROM checkup_files WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("查询失败: {}", e))?;
 
     let total_ocr: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM ocr_results WHERE record_id = ?1",
-            [&record_id],
+            "SELECT COUNT(*) FROM ocr_results WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("查询失败: {}", e))?;
 
     let success_ocr: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM ocr_results WHERE record_id = ?1 AND status = 'success'",
-            [&record_id],
+            "SELECT COUNT(*) FROM ocr_results WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND status = 'success'",
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("查询失败: {}", e))?;
 
     let failed_ocr: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM ocr_results WHERE record_id = ?1 AND status = 'failed'",
-            [&record_id],
+            "SELECT COUNT(*) FROM ocr_results WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND status = 'failed'",
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("查询失败: {}", e))?;
 
     let record_status: String = conn
         .query_row(
-            "SELECT status FROM checkup_records WHERE id = ?1",
-            [&record_id],
+            "SELECT status FROM checkup_records WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("记录不存在: {}", e))?;
@@ -945,21 +1066,25 @@ pub fn get_ocr_status(
 #[tauri::command]
 pub fn get_ocr_results(
     record_id: String,
+    scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
 ) -> Result<Vec<OcrResult>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
 
     let mut stmt = conn
         .prepare(
             "SELECT id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at
-             FROM ocr_results WHERE record_id = ?1
+             FROM ocr_results WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3
              ORDER BY created_at ASC"
         )
         .map_err(|e| format!("查询OCR结果失败: {}", e))?;
 
     let results = stmt
-        .query_map([&record_id], |row| {
+        .query_map(
+            rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+            |row| {
             Ok(OcrResult {
                 id: row.get(0)?,
                 file_id: row.get(1)?,

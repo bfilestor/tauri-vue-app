@@ -6,6 +6,7 @@ pub mod ocr;
 pub mod project;
 pub mod provider;
 pub mod record;
+pub mod scope;
 pub mod system;
 pub mod trend;
 pub mod mobile;
