@@ -103,6 +103,11 @@ function normalizeMemberId(value) {
   return normalizeText(value) || null
 }
 
+function normalizeOwnerUserId(value) {
+  const normalized = normalizeMemberId(value)
+  return normalized == null ? '' : String(normalized)
+}
+
 function normalizeMemberItem(member) {
   if (!member || typeof member !== 'object') {
     return null
@@ -340,6 +345,7 @@ function computeCacheKey(session) {
 export function createAccountContextService({
   client,
   authApi,
+  memberRepository = null,
   cacheTtlMs = DEFAULT_CACHE_TTL_MS,
   now = () => Date.now(),
 } = {}) {
@@ -361,6 +367,23 @@ export function createAccountContextService({
     return normalizeMemberId(storage.getString(SECURITY_STORAGE_KEYS.currentMemberId))
   }
 
+  function resolveSessionState() {
+    if (typeof authApi?.getSessionState === 'function') {
+      return authApi.getSessionState() || {}
+    }
+    return {}
+  }
+
+  function resolveOwnerUserId(sessionState = null, fallbackUserId = null) {
+    const session = sessionState || resolveSessionState()
+    return normalizeOwnerUserId(
+      session?.userId
+      ?? session?.userInfo?.userId
+      ?? fallbackUserId
+      ?? state.profile?.userId,
+    )
+  }
+
   async function requestAuthed(method, path, body) {
     if (method === 'POST' && typeof client.post === 'function') {
       return client.post(path, body, {}, { requiresAuth: true, includeUserId: true })
@@ -377,13 +400,43 @@ export function createAccountContextService({
     throw new Error(`Unsupported authenticated request method: ${method}`)
   }
 
-  async function listMembers() {
-    const response = await client.get('/app-api/family-members', {}, { requiresAuth: true, includeUserId: true })
+  const fallbackMemberRepository = {
+    async listMembers() {
+      const response = await client.get('/app-api/family-members', {}, { requiresAuth: true, includeUserId: true })
+      return normalizeMembers(response)
+    },
+    async createMember({ payload = {} } = {}) {
+      return requestAuthed('POST', '/app-api/family-members', payload)
+    },
+    async updateMember({ memberId, payload = {} } = {}) {
+      return requestAuthed('PUT', `/app-api/family-members/${memberId}`, payload)
+    },
+    async deleteMember({ memberId } = {}) {
+      return requestAuthed('DELETE', `/app-api/family-members/${memberId}`)
+    },
+    async setDefaultMember({ memberId } = {}) {
+      return requestAuthed('PUT', `/app-api/family-members/${memberId}/set-default`)
+    },
+  }
+
+  const resolvedMemberRepository = memberRepository || fallbackMemberRepository
+
+  async function listMembers(ownerUserId) {
+    const response = await resolvedMemberRepository.listMembers({
+      ownerUserId,
+      requestAuthed,
+      client,
+    })
     return normalizeMembers(response)
   }
 
-  async function createInitialSelfMember(profile) {
-    return requestAuthed('POST', '/app-api/family-members', createSelfMemberPayload(profile))
+  async function createInitialSelfMember(ownerUserId, profile) {
+    return resolvedMemberRepository.createMember({
+      ownerUserId,
+      payload: createSelfMemberPayload(profile),
+      requestAuthed,
+      client,
+    })
   }
 
   function findMemberById(members, memberId) {
@@ -412,20 +465,25 @@ export function createAccountContextService({
     state.packageCards = mapProductsToPackageCards(normalizedProducts)
   }
 
-  async function fetchAuthedContext() {
+  async function fetchAuthedContext(sessionState = null) {
     const [profile, balance, wallet] = await Promise.all([
       client.get('/app-api/account/profile', {}, { requiresAuth: true, includeUserId: true }),
       client.get('/app-api/account/balance', {}, { requiresAuth: true, includeUserId: true }),
       client.get('/app-api/wallet', {}, { requiresAuth: true, includeUserId: true }),
     ])
 
-    let members = await listMembers()
+    const ownerUserId = resolveOwnerUserId(sessionState, profile?.userId)
+    if (!ownerUserId) {
+      throw new Error('Missing owner user id.')
+    }
+
+    let members = await listMembers(ownerUserId)
     let memberInitError = ''
 
     if (members.length === 0) {
       try {
-        await createInitialSelfMember(profile)
-        members = await listMembers()
+        await createInitialSelfMember(ownerUserId, profile)
+        members = await listMembers(ownerUserId)
       } catch (error) {
         memberInitError = error?.message || '系统自动创建本人档案失败，请稍后重试。'
       }
@@ -495,7 +553,7 @@ export function createAccountContextService({
       if (session?.isAuthenticated) {
         await Promise.all([
           fetchProducts(),
-          fetchAuthedContext(),
+          fetchAuthedContext(session),
         ])
       } else {
         await fetchProducts()
@@ -529,7 +587,13 @@ export function createAccountContextService({
   }
 
   async function createMember(payload = {}) {
-    const response = await requestAuthed('POST', '/app-api/family-members', payload)
+    const ownerUserId = resolveOwnerUserId(null, state.profile?.userId)
+    const response = await resolvedMemberRepository.createMember({
+      ownerUserId,
+      payload,
+      requestAuthed,
+      client,
+    })
     const createdMemberId = normalizeMemberId(
       response?.memberId
       ?? response?.id
@@ -551,7 +615,14 @@ export function createAccountContextService({
   }
 
   async function updateMember(memberId, payload = {}) {
-    await requestAuthed('PUT', `/app-api/family-members/${memberId}`, payload)
+    const ownerUserId = resolveOwnerUserId(null, state.profile?.userId)
+    await resolvedMemberRepository.updateMember({
+      memberId: String(memberId),
+      ownerUserId,
+      payload,
+      requestAuthed,
+      client,
+    })
     await refresh({
       force: true,
       sessionState: typeof authApi?.getSessionState === 'function'
@@ -562,11 +633,17 @@ export function createAccountContextService({
   }
 
   async function deleteMember(memberId) {
+    const ownerUserId = resolveOwnerUserId(null, state.profile?.userId)
     if (String(state.currentMember?.memberId) === String(memberId)) {
       persistCurrentMemberId('')
     }
 
-    await requestAuthed('DELETE', `/app-api/family-members/${memberId}`)
+    await resolvedMemberRepository.deleteMember({
+      memberId: String(memberId),
+      ownerUserId,
+      requestAuthed,
+      client,
+    })
     await refresh({
       force: true,
       sessionState: typeof authApi?.getSessionState === 'function'
@@ -577,8 +654,14 @@ export function createAccountContextService({
   }
 
   async function setDefaultMember(memberId) {
+    const ownerUserId = resolveOwnerUserId(null, state.profile?.userId)
     persistCurrentMemberId(memberId)
-    await requestAuthed('PUT', `/app-api/family-members/${memberId}/set-default`)
+    await resolvedMemberRepository.setDefaultMember({
+      memberId: String(memberId),
+      ownerUserId,
+      requestAuthed,
+      client,
+    })
     await refresh({
       force: true,
       sessionState: typeof authApi?.getSessionState === 'function'

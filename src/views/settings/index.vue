@@ -255,7 +255,7 @@
               <el-button
                 type="primary"
                 size="small"
-                :disabled="accountContextState.isGuest || !accountContextState.profile"
+                :disabled="accountContextState.isGuest"
                 @click="openCreateMemberDialog"
               >
                 <span class="material-symbols-outlined text-sm mr-1">person_add</span>
@@ -264,7 +264,7 @@
             </div>
           </template>
 
-          <div v-if="accountContextState.isGuest || !accountContextState.profile" class="space-y-3">
+          <div v-if="accountContextState.isGuest" class="space-y-3">
             <el-alert
               type="warning"
               :closable="false"
