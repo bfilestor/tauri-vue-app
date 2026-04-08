@@ -48,7 +48,7 @@
 | E3-S2-I2 | OCR 与 AI 分析入口复用同一预检/拦截器 | Test Passed | E3-S2-I1 | `npm test`、`npm run build` 通过 | 上传页 OCR/AI 分析前已接入通用模式预检，余额不足自动拉起购买并在支付成功后自动重试原操作；自定义模式不受影响 |
 | E4-S1-I1 | 首登自动创建本人成员与业务准入控制 | Test Passed | E1-S1-I2, E2-S1-I1 | `npm test`、`npm run build` 通过 | 已实现登录后成员列表检查、无成员自动创建 `SELF` 本人成员、创建失败时阻塞业务入口 |
 | E4-S1-I2 | 家庭成员管理页与跨页面成员切换 | Test Passed | E4-S1-I1 | `npm test`、`npm run build` 通过 | 已补齐成员管理页、侧边栏成员切换、当前成员持久化与上传/历史/趋势/AI 问答页联动刷新 |
-| E4-S2-I1 | 本地数据库 schema 迁移与成员过滤基础层 | Todo | E4-S1-I1 | 待补 | 重点改造 `src-tauri/src/db.rs` 与各命令 SQL，补齐 `owner_user_id + member_id` 隔离，并为 `chat_logs` 增加 `conversation_id`；本期不做旧数据自动迁移 |
+| E4-S2-I1 | 本地数据库 schema 迁移与成员过滤基础层 | Test Passed | E4-S1-I1 | `cargo test db -- --nocapture`、`cargo check` 通过 | 已补齐 V2 schema、`PRAGMA user_version` 迁移机制、新表/新字段/索引与成员上下文读取 helper；未处理旧数据归属迁移 |
 | E4-S2-I2 | 报告、OCR、分析、趋势与 AI 对话成员级隔离 | Todo | E4-S1-I2, E4-S2-I1, E3-S2-I2 | 待补 | 保证不同家庭成员的资料、分析结果和聊天上下文完全独立 |
 
 
