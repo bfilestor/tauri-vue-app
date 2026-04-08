@@ -3,10 +3,13 @@
     <!-- Left Column: History -->
     <section class="w-[35%] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
-            <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary">history_edu</span>
-                历史 AI 分析建议
-            </h3>
+            <div>
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-primary">history_edu</span>
+                    历史 AI 分析建议
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-1">当前成员：{{ accountContextState.currentMember?.memberName || '未选择' }}</p>
+            </div>
             <span class="text-xs text-slate-400">共 {{ historyTotal }} 条</span>
         </div>
         
@@ -433,7 +436,7 @@ const ensureGeneralModeReady = async (text) => {
         return { ok: false, reason: 'context_failed' }
     }
 
-    const memberId = accountContextState.defaultMember?.memberId
+    const memberId = accountContextState.currentMember?.memberId
     if (accountContextState.memberBlocked || !memberId) {
         ElMessage.warning(accountContextState.memberBlockedReason || '请先在账户中心设置默认成员后再试')
         return { ok: false, reason: 'member_required' }
@@ -585,6 +588,19 @@ onMounted(async () => {
 onUnmounted(() => {
     unlisteners.forEach(fn => fn())
 })
+
+watch(
+    () => accountContextState.currentMember?.memberId,
+    (nextMemberId, prevMemberId) => {
+        if (!nextMemberId || nextMemberId === prevMemberId) {
+            return
+        }
+
+        pendingRetryMessage.value = ''
+        void loadHistory(true)
+        void loadChatHistory()
+    }
+)
 
 watch(
     () => purchaseDialogState.pollingStatus,

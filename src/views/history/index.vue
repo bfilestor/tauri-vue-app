@@ -7,6 +7,7 @@
       <div>
         <h1 class="text-2xl font-bold text-slate-800">历史健康档案</h1>
         <p class="text-slate-500 text-sm mt-1">按时间线查看您的体检记录与 AI 健康分析</p>
+        <p class="text-xs text-slate-400 mt-2">当前成员：{{ accountContextState.currentMember?.memberName || '未选择' }}</p>
       </div>
     </header>
 
@@ -132,9 +133,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onActivated } from 'vue'
+import { ref, onMounted, onActivated, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
+import { useAccountContext } from '@/modules/security/index.js'
+
+const { state: accountContextState } = useAccountContext()
 
 // ===== 历史记录 =====
 const records = ref([])
@@ -207,6 +211,17 @@ onMounted(() => {
 onActivated(() => {
   loadData(true)
 })
+
+watch(
+  () => accountContextState.currentMember?.memberId,
+  (nextMemberId, prevMemberId) => {
+    if (!nextMemberId || nextMemberId === prevMemberId) {
+      return
+    }
+
+    void loadData(true)
+  }
+)
 
 const getStatusColor = (record) => {
   if (record.abnormal_items.length > 0) return '#f43f5e' // red

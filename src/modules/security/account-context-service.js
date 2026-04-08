@@ -1,3 +1,6 @@
+import { SECURITY_STORAGE_KEYS } from './constants.js'
+import { createStorageAdapter } from './storage.js'
+
 const DEFAULT_CACHE_TTL_MS = 30_000
 export const PACKAGE_CARD_CALLS = [20, 100, 500]
 
@@ -345,6 +348,18 @@ export function createAccountContextService({
   }
 
   const state = createInitialState()
+  const storage = createStorageAdapter(client.storage)
+
+  function persistCurrentMemberId(memberId) {
+    storage.setString(
+      SECURITY_STORAGE_KEYS.currentMemberId,
+      memberId == null ? '' : String(memberId),
+    )
+  }
+
+  function readPersistedCurrentMemberId() {
+    return normalizeMemberId(storage.getString(SECURITY_STORAGE_KEYS.currentMemberId))
+  }
 
   async function requestAuthed(method, path, body) {
     if (method === 'POST' && typeof client.post === 'function') {
@@ -369,6 +384,22 @@ export function createAccountContextService({
 
   async function createInitialSelfMember(profile) {
     return requestAuthed('POST', '/app-api/family-members', createSelfMemberPayload(profile))
+  }
+
+  function findMemberById(members, memberId) {
+    return members.find((item) => String(item?.memberId) === String(memberId)) || null
+  }
+
+  function resolveCurrentMember(members, defaultMember) {
+    const storedMemberId = readPersistedCurrentMemberId()
+    if (storedMemberId != null) {
+      const storedMember = findMemberById(members, storedMemberId)
+      if (storedMember) {
+        return storedMember
+      }
+    }
+
+    return defaultMember || null
   }
 
   async function fetchProducts() {
@@ -401,18 +432,21 @@ export function createAccountContextService({
     }
 
     const defaultMember = resolveDefaultMember(members)
+    const currentMember = resolveCurrentMember(members, defaultMember)
+
+    persistCurrentMemberId(currentMember?.memberId ?? '')
 
     state.profile = profile || null
     state.balance = balance || null
     state.wallet = wallet || null
     state.members = members
     state.defaultMember = defaultMember
-    state.currentMember = defaultMember
-    state.memberBlocked = !defaultMember
-    state.memberBlockedReason = defaultMember
+    state.currentMember = currentMember
+    state.memberBlocked = !currentMember
+    state.memberBlockedReason = currentMember
       ? ''
       : (memberInitError || '未找到默认成员，请先在账户中设置默认成员后再继续。')
-    state.status = defaultMember ? 'ready' : 'blocked'
+    state.status = currentMember ? 'ready' : 'blocked'
   }
 
   function shouldUseCache({ force, cacheKey }) {
@@ -454,6 +488,7 @@ export function createAccountContextService({
       state.currentMember = null
       state.memberBlocked = false
       state.memberBlockedReason = ''
+      persistCurrentMemberId('')
     }
 
     try {
@@ -479,8 +514,83 @@ export function createAccountContextService({
     return state
   }
 
+  function selectMember(memberId) {
+    const nextMember = findMemberById(state.members, memberId)
+    if (!nextMember) {
+      throw new Error('成员不存在或已失效')
+    }
+
+    state.currentMember = nextMember
+    state.memberBlocked = false
+    state.memberBlockedReason = ''
+    state.status = 'ready'
+    persistCurrentMemberId(nextMember.memberId)
+    return state
+  }
+
+  async function createMember(payload = {}) {
+    const response = await requestAuthed('POST', '/app-api/family-members', payload)
+    const createdMemberId = normalizeMemberId(
+      response?.memberId
+      ?? response?.id
+      ?? response?.data?.memberId
+      ?? response?.data?.id,
+    )
+
+    if (createdMemberId != null) {
+      persistCurrentMemberId(createdMemberId)
+    }
+
+    await refresh({
+      force: true,
+      sessionState: typeof authApi?.getSessionState === 'function'
+        ? authApi.getSessionState()
+        : {},
+    })
+    return state
+  }
+
+  async function updateMember(memberId, payload = {}) {
+    await requestAuthed('PUT', `/app-api/family-members/${memberId}`, payload)
+    await refresh({
+      force: true,
+      sessionState: typeof authApi?.getSessionState === 'function'
+        ? authApi.getSessionState()
+        : {},
+    })
+    return state
+  }
+
+  async function deleteMember(memberId) {
+    if (String(state.currentMember?.memberId) === String(memberId)) {
+      persistCurrentMemberId('')
+    }
+
+    await requestAuthed('DELETE', `/app-api/family-members/${memberId}`)
+    await refresh({
+      force: true,
+      sessionState: typeof authApi?.getSessionState === 'function'
+        ? authApi.getSessionState()
+        : {},
+    })
+    return state
+  }
+
+  async function setDefaultMember(memberId) {
+    persistCurrentMemberId(memberId)
+    await requestAuthed('PUT', `/app-api/family-members/${memberId}/set-default`)
+    await refresh({
+      force: true,
+      sessionState: typeof authApi?.getSessionState === 'function'
+        ? authApi.getSessionState()
+        : {},
+    })
+    return state
+  }
+
   function clear() {
     Object.assign(state, createInitialState())
+    persistCurrentMemberId('')
     return state
   }
 
@@ -488,6 +598,11 @@ export function createAccountContextService({
     state,
     getState,
     refresh,
+    selectMember,
+    createMember,
+    updateMember,
+    deleteMember,
+    setDefaultMember,
     refreshForCurrentSession(options = {}) {
       return refresh({
         ...options,

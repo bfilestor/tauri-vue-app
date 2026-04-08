@@ -5,6 +5,8 @@ import {
   PACKAGE_CARD_CALLS,
   createAccountContextService,
 } from '../../src/modules/security/account-context-service.js'
+import { createMemoryStorage } from '../../src/modules/security/storage.js'
+import { SECURITY_STORAGE_KEYS } from '../../src/modules/security/constants.js'
 
 function createClientStub() {
   const requests = []
@@ -214,6 +216,57 @@ test('自动创建本人成员失败时保持阻塞状态并返回明确提示',
   assert.equal(state.defaultMember, null)
   assert.equal(state.currentMember, null)
   assert.match(state.memberBlockedReason, /创建成员接口不可用/)
+})
+
+test('当前成员可按本地持久化记录恢复，并优先于默认成员', async () => {
+  const client = createClientStub()
+  client.storage = createMemoryStorage({
+    [SECURITY_STORAGE_KEYS.currentMemberId]: '5002',
+  })
+  client.when('/app-api/account/profile', () => ({ userId: 1005 }))
+  client.when('/app-api/account/balance', () => ({ ocrBalance: 2 }))
+  client.when('/app-api/wallet', () => ({ totalBalance: 2 }))
+  client.when('/app-api/family-members', () => ([
+    { memberId: 5001, memberName: '本人', defaultFlag: true },
+    { memberId: 5002, memberName: '父亲', defaultFlag: false },
+  ]))
+  client.when('/app-api/products', () => ([]))
+
+  const service = createAccountContextService({
+    client,
+    authApi: createAuthApiStub({ isAuthenticated: true, accessToken: 'token-005' }),
+  })
+
+  const state = await service.refreshForCurrentSession({ force: true })
+
+  assert.equal(state.defaultMember?.memberId, 5001)
+  assert.equal(state.currentMember?.memberId, 5002)
+  assert.equal(state.memberBlocked, false)
+})
+
+test('切换当前成员后会更新共享状态与本地持久化', async () => {
+  const storage = createMemoryStorage()
+  const client = createClientStub()
+  client.storage = storage
+  client.when('/app-api/account/profile', () => ({ userId: 1006 }))
+  client.when('/app-api/account/balance', () => ({ ocrBalance: 2 }))
+  client.when('/app-api/wallet', () => ({ totalBalance: 2 }))
+  client.when('/app-api/family-members', () => ([
+    { memberId: 6001, memberName: '本人', defaultFlag: true },
+    { memberId: 6002, memberName: '母亲', defaultFlag: false },
+  ]))
+  client.when('/app-api/products', () => ([]))
+
+  const service = createAccountContextService({
+    client,
+    authApi: createAuthApiStub({ isAuthenticated: true, accessToken: 'token-006' }),
+  })
+
+  await service.refreshForCurrentSession({ force: true })
+  const state = service.selectMember(6002)
+
+  assert.equal(state.currentMember?.memberId, 6002)
+  assert.equal(storage.getItem(SECURITY_STORAGE_KEYS.currentMemberId), '6002')
 })
 
 test('商品列表缺少档位时对应卡片保持缺失态，不伪造 SKU', async () => {

@@ -3,6 +3,7 @@
     <header class="mb-6">
       <h1 class="text-3xl font-bold text-slate-900">趋势分析</h1>
       <p class="text-slate-500 mt-1">通过可视化图表追踪您的健康指标变化趋势，及时发现潜在风险。</p>
+      <p class="text-xs text-slate-400 mt-2">当前成员：{{ accountContextState.currentMember?.memberName || '未选择' }}</p>
     </header>
 
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -117,6 +118,7 @@
 import { ref, onMounted, onUnmounted, nextTick, watch, onActivated, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
+import { useAccountContext } from '@/modules/security/index.js'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import {
@@ -128,6 +130,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, MarkLineComponent, LegendComponent, CanvasRenderer])
+const { state: accountContextState } = useAccountContext()
 
 // 项目列表
 const projects = ref([])
@@ -169,6 +172,22 @@ watch(timeRange, () => {
         renderCharts()
     })
 })
+
+watch(
+  () => accountContextState.currentMember?.memberId,
+  (nextMemberId, prevMemberId) => {
+    if (!nextMemberId || nextMemberId === prevMemberId) {
+      return
+    }
+
+    if (selectedProjectId.value) {
+      void loadTrends()
+      return
+    }
+
+    void loadAllTrends()
+  }
+)
 
 // 图表实例管理
 const chartRefs = {}

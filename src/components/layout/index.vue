@@ -58,6 +58,30 @@
               <div class="h-full rounded-full bg-gradient-to-r from-[#2b8cee] to-cyan-400" :style="{ width: `${userAreaState.usage.percent}%` }"></div>
             </div>
           </div>
+          <div class="mt-3">
+            <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+              <span>当前成员</span>
+              <span class="font-semibold text-slate-700 truncate max-w-[120px]">
+                {{ accountContextState.currentMember?.memberName || '未选择' }}
+              </span>
+            </div>
+            <el-select
+              v-if="accountContextState.members.length > 0"
+              :model-value="accountContextState.currentMember?.memberId ?? ''"
+              size="small"
+              class="w-full"
+              placeholder="选择成员"
+              :loading="switchingMember"
+              @change="handleMemberSwitch"
+            >
+              <el-option
+                v-for="member in accountContextState.members"
+                :key="member.memberId"
+                :label="member.memberName || `成员 ${member.memberId}`"
+                :value="member.memberId"
+              />
+            </el-select>
+          </div>
           <p v-if="usageFeedback.stale" class="text-[11px] text-amber-600 mt-2">
             次数刷新失败，当前显示缓存数据
           </p>
@@ -203,7 +227,11 @@ import defaultUserAvatar from '@/assets/app.png'
 const route = useRoute()
 const appWindow = getCurrentWindow()
 const authApi = getAuthApi()
-const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const {
+  state: accountContextState,
+  refresh: refreshAccountContext,
+  selectMember,
+} = useAccountContext()
 const { openPurchaseDialog } = usePurchaseDialog()
 const authDialogVisible = ref(false)
 const authDialogTab = ref(AUTH_DIALOG_TABS.login)
@@ -233,6 +261,7 @@ const userAreaState = computed(() => {
 })
 const accountMenuEntries = computed(() => buildAccountMenuEntries(userAreaState.value.mode === 'authenticated'))
 const showHeaderAuthButtons = computed(() => userAreaState.value.mode !== 'authenticated')
+const switchingMember = ref(false)
 
 const menuItems = [
   { path: '/upload', title: '数据上传', icon: 'cloud_upload' },
@@ -332,6 +361,22 @@ const handlePurchaseClick = () => {
   void openPurchaseDialog({
     reason: 'sidebar',
   })
+}
+
+const handleMemberSwitch = async (memberId) => {
+  if (memberId == null || memberId === '') {
+    return
+  }
+
+  switchingMember.value = true
+  try {
+    selectMember(memberId)
+    ElMessage.success('已切换当前成员')
+  } catch (error) {
+    ElMessage.error(error?.message || '切换成员失败')
+  } finally {
+    switchingMember.value = false
+  }
 }
 
 const handleAccountMenu = () => {

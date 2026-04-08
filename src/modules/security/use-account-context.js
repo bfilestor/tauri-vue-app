@@ -22,6 +22,31 @@ async function refresh(options = {}) {
   }
 }
 
+function selectMember(memberId) {
+  accountContextService.selectMember(memberId)
+  return syncFromService()
+}
+
+async function createMember(payload = {}) {
+  await accountContextService.createMember(payload)
+  return syncFromService()
+}
+
+async function updateMember(memberId, payload = {}) {
+  await accountContextService.updateMember(memberId, payload)
+  return syncFromService()
+}
+
+async function deleteMember(memberId) {
+  await accountContextService.deleteMember(memberId)
+  return syncFromService()
+}
+
+async function setDefaultMember(memberId) {
+  await accountContextService.setDefaultMember(memberId)
+  return syncFromService()
+}
+
 function clear() {
   accountContextService.clear()
   return syncFromService()
@@ -33,6 +58,11 @@ export function useAccountContext() {
   return {
     state: readonly(sharedState),
     refresh,
+    selectMember,
+    createMember,
+    updateMember,
+    deleteMember,
+    setDefaultMember,
     clear,
     syncFromService,
   }

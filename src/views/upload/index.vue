@@ -4,6 +4,7 @@
       <div>
         <h1 class="text-3xl font-bold text-slate-900">报告上传</h1>
         <p class="text-slate-500 mt-1">上传体检报告图片，通过 AI 智能识别 + 深度分析，管理您的每次检查数据。</p>
+        <p class="text-xs text-slate-400 mt-2">当前成员：{{ accountContextState.currentMember?.memberName || '未选择' }}</p>
       </div>
       <el-button type="primary" @click="showCreateDialog = true">
         <span class="material-symbols-outlined text-sm mr-1">add_circle</span>
@@ -816,7 +817,7 @@ const runActionWithUsageGuard = async ({ record, usageType, action }) => {
     return false
   }
 
-  const memberId = accountContextState.defaultMember?.memberId
+  const memberId = accountContextState.currentMember?.memberId
   if (accountContextState.memberBlocked || !memberId) {
     pendingUsageAction.value = null
     ElMessage.warning(accountContextState.memberBlockedReason || '请先设置默认成员后再试')
@@ -1295,6 +1296,20 @@ watch(fileCategoryOptions, (options) => {
     selectedFileCategoryId.value = ALL_CATEGORY_VALUE
   }
 }, { immediate: true })
+
+watch(
+  () => accountContextState.currentMember?.memberId,
+  (nextMemberId, prevMemberId) => {
+    if (!nextMemberId || nextMemberId === prevMemberId) {
+      return
+    }
+
+    pendingUsageAction.value = null
+    expandedId.value = ''
+    currentFiles.value = []
+    void loadRecords(true)
+  }
+)
 
 watch(
   () => purchaseDialogState.pollingStatus,

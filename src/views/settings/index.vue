@@ -244,6 +244,71 @@
         </template>
       </el-tab-pane>
 
+      <el-tab-pane label="家庭成员" name="members">
+        <el-card shadow="never" class="!rounded-xl !border-slate-200 mb-6">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2 font-bold text-slate-700 text-sm">
+                <span class="material-symbols-outlined text-blue-500 text-[18px]">groups</span>
+                家庭成员管理
+              </div>
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="accountContextState.isGuest || !accountContextState.profile"
+                @click="openCreateMemberDialog"
+              >
+                <span class="material-symbols-outlined text-sm mr-1">person_add</span>
+                新增成员
+              </el-button>
+            </div>
+          </template>
+
+          <div v-if="accountContextState.isGuest || !accountContextState.profile" class="space-y-3">
+            <el-alert
+              type="warning"
+              :closable="false"
+              title="当前为访客态，登录后才可管理家庭成员。"
+            />
+          </div>
+
+          <div v-else class="space-y-4">
+            <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                <span>当前成员：<strong class="text-slate-800">{{ accountContextState.currentMember?.memberName || '未选择' }}</strong></span>
+                <span>默认成员：<strong class="text-slate-800">{{ accountContextState.defaultMember?.memberName || '未设置' }}</strong></span>
+              </div>
+            </div>
+
+            <el-table :data="accountContextState.members" border stripe>
+              <el-table-column prop="memberName" label="成员姓名" min-width="140" />
+              <el-table-column prop="relationCode" label="关系" width="120" />
+              <el-table-column prop="gender" label="性别" width="90" />
+              <el-table-column prop="birthday" label="生日" width="140" />
+              <el-table-column label="状态" width="220">
+                <template #default="{ row }">
+                  <div class="flex items-center gap-2">
+                    <el-tag v-if="String(accountContextState.currentMember?.memberId) === String(row.memberId)" size="small" type="success">当前</el-tag>
+                    <el-tag v-if="row.isDefault" size="small" type="primary">默认</el-tag>
+                    <el-tag v-if="row.status" size="small" effect="plain">{{ row.status }}</el-tag>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="280" fixed="right">
+                <template #default="{ row }">
+                  <div class="flex items-center gap-2">
+                    <el-button size="small" plain @click="handleSwitchMember(row.memberId)">切换</el-button>
+                    <el-button size="small" plain @click="openEditMemberDialog(row)">编辑</el-button>
+                    <el-button size="small" plain :disabled="row.isDefault" @click="handleSetDefaultMember(row.memberId)">设默认</el-button>
+                    <el-button size="small" type="danger" plain @click="handleDeleteMember(row)">删除</el-button>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
       <!-- ========== Prompt 设置 Tab ========== -->
       <el-tab-pane label="患者信息" name="prompt">
         <el-card shadow="never" class="!rounded-xl !border-slate-200">
@@ -633,6 +698,46 @@
         <el-button type="primary" @click="confirmSaveModel">{{ editingModelObj ? '保存' : '添加模型' }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showMemberDialog" :title="editingMemberId ? '编辑家庭成员' : '新增家庭成员'" width="480px">
+      <el-form :model="memberForm" label-position="top">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <el-form-item label="成员姓名" required>
+            <el-input v-model="memberForm.memberName" maxlength="32" />
+          </el-form-item>
+          <el-form-item label="关系" required>
+            <el-select v-model="memberForm.relationCode" class="w-full">
+              <el-option label="本人" value="SELF" />
+              <el-option label="父亲" value="FATHER" />
+              <el-option label="母亲" value="MOTHER" />
+              <el-option label="配偶" value="SPOUSE" />
+              <el-option label="儿子" value="SON" />
+              <el-option label="女儿" value="DAUGHTER" />
+              <el-option label="其他" value="OTHER" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="性别">
+            <el-select v-model="memberForm.gender" class="w-full" clearable>
+              <el-option label="男" value="MALE" />
+              <el-option label="女" value="FEMALE" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="生日">
+            <el-date-picker v-model="memberForm.birthday" type="date" value-format="YYYY-MM-DD" class="!w-full" />
+          </el-form-item>
+        </div>
+        <el-form-item label="手机号">
+          <el-input v-model="memberForm.mobile" maxlength="20" />
+        </el-form-item>
+        <el-form-item label="健康备注">
+          <el-input v-model="memberForm.healthNote" type="textarea" :rows="3" maxlength="200" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showMemberDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingMember" @click="submitMemberForm">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -654,7 +759,15 @@ import {
 
 // ===== 多提供商管理 (ISS-060~066) =====
 const activeTab = ref('ai')
-const { state: accountContextState, refresh: refreshAccountContext } = useAccountContext()
+const {
+  state: accountContextState,
+  refresh: refreshAccountContext,
+  selectMember,
+  createMember,
+  updateMember,
+  deleteMember,
+  setDefaultMember,
+} = useAccountContext()
 const { state: aiModeState, setMode: setAiMode } = useAiMode()
 const { openPurchaseDialog } = usePurchaseDialog()
 const refreshingAccountContext = ref(false)
@@ -711,11 +824,22 @@ const exitDeveloperMode = () => {
 // Provider / Model 弹窗
 const showProviderDialog = ref(false)
 const showModelDialog = ref(false)
+const showMemberDialog = ref(false)
 const showCustomModeGuideDrawer = ref(false)
 const editingProviderObj = ref(null)
 const editingModelObj = ref(null)
+const editingMemberId = ref('')
 const providerForm = reactive({ name: '', type: 'openai' })
 const modelForm = reactive({ modelId: '', modelName: '', groupName: '' })
+const savingMember = ref(false)
+const memberForm = reactive({
+  memberName: '',
+  relationCode: 'OTHER',
+  gender: '',
+  birthday: '',
+  mobile: '',
+  healthNote: '',
+})
 
 // ===== 计算属性 =====
 const filteredProviders = computed(() => {
@@ -772,6 +896,106 @@ const handleOpenPurchaseDialog = (preferredCalls) => {
     preferredCalls,
     reason: 'settings',
   })
+}
+
+const resetMemberForm = () => {
+  editingMemberId.value = ''
+  memberForm.memberName = ''
+  memberForm.relationCode = 'OTHER'
+  memberForm.gender = ''
+  memberForm.birthday = ''
+  memberForm.mobile = ''
+  memberForm.healthNote = ''
+}
+
+const openCreateMemberDialog = () => {
+  resetMemberForm()
+  showMemberDialog.value = true
+}
+
+const openEditMemberDialog = (member) => {
+  editingMemberId.value = String(member.memberId)
+  memberForm.memberName = member.memberName || ''
+  memberForm.relationCode = member.relationCode || 'OTHER'
+  memberForm.gender = member.gender || ''
+  memberForm.birthday = member.birthday || ''
+  memberForm.mobile = member.mobile || ''
+  memberForm.healthNote = member.healthNote || ''
+  showMemberDialog.value = true
+}
+
+const submitMemberForm = async () => {
+  if (!memberForm.memberName.trim()) {
+    ElMessage.warning('请输入成员姓名')
+    return
+  }
+
+  if (!memberForm.relationCode) {
+    ElMessage.warning('请选择成员关系')
+    return
+  }
+
+  const payload = {
+    memberName: memberForm.memberName.trim(),
+    relationCode: memberForm.relationCode,
+    gender: memberForm.gender || undefined,
+    birthday: memberForm.birthday || undefined,
+    mobile: memberForm.mobile?.trim() || undefined,
+    healthNote: memberForm.healthNote?.trim() || undefined,
+  }
+
+  savingMember.value = true
+  try {
+    if (editingMemberId.value) {
+      await updateMember(editingMemberId.value, payload)
+      ElMessage.success('成员信息已更新')
+    } else {
+      await createMember(payload)
+      ElMessage.success('成员已创建')
+    }
+    showMemberDialog.value = false
+  } catch (e) {
+    ElMessage.error(e?.message || '保存成员失败')
+  } finally {
+    savingMember.value = false
+  }
+}
+
+const handleSwitchMember = async (memberId) => {
+  try {
+    selectMember(memberId)
+    ElMessage.success('已切换当前成员')
+  } catch (e) {
+    ElMessage.error(e?.message || '切换成员失败')
+  }
+}
+
+const handleSetDefaultMember = async (memberId) => {
+  try {
+    await setDefaultMember(memberId)
+    ElMessage.success('默认成员已更新')
+  } catch (e) {
+    ElMessage.error(e?.message || '设置默认成员失败')
+  }
+}
+
+const handleDeleteMember = async (member) => {
+  if ((accountContextState.members || []).length <= 1) {
+    ElMessage.warning('至少保留 1 个家庭成员')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(`确定删除成员「${member.memberName || member.memberId}」吗？`, '确认删除', {
+      type: 'warning',
+    })
+    await deleteMember(member.memberId)
+    ElMessage.success('成员已删除')
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error(e?.message || '删除成员失败')
+    }
+  }
 }
 
 const openCustomModeGuide = () => {

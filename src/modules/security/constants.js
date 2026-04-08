@@ -15,6 +15,7 @@ export const SECURITY_STORAGE_KEYS = {
   userInfo: 'health.auth.userInfo',
   guestMode: 'health.auth.guestMode',
   trialGiftPending: 'health.auth.trialGiftPending',
+  currentMemberId: 'health.member.currentMemberId',
   aiMode: 'health.ai.mode',
 }
 
