@@ -9,7 +9,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
-fn read_member_scoped_config_with_fallback(
+fn read_member_scoped_config(
     conn: &Connection,
     owner_user_id: &str,
     member_id: &str,
@@ -24,16 +24,7 @@ fn read_member_scoped_config_with_fallback(
         )
         .ok();
 
-    if let Some(value) = scoped_value {
-        return value;
-    }
-
-    conn.query_row(
-        "SELECT config_value FROM system_config WHERE config_key = ?1",
-        [key],
-        |row| row.get(0),
-    )
-    .unwrap_or_default()
+    scoped_value.unwrap_or_default()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -167,7 +158,7 @@ pub async fn start_ai_analysis(
             });
 
         // 获取用户自定义 Prompt（患者情况说明）
-        let user_custom_prompt = read_member_scoped_config_with_fallback(
+        let user_custom_prompt = read_member_scoped_config(
             conn,
             &scope.owner_user_id,
             &scope.member_id,
@@ -814,7 +805,7 @@ pub async fn chat_with_ai(
         let model = http_client::get_default_model(&conn);
 
         // 获取用户自定义 Prompt（患者情况说明）
-        let user_custom_prompt = read_member_scoped_config_with_fallback(
+        let user_custom_prompt = read_member_scoped_config(
             conn,
             &chat_scope.owner_user_id,
             &chat_scope.member_id,
@@ -1144,6 +1135,59 @@ mod tests {
             rusqlite::params![id, owner_user_id, member_id, conversation_id, role, content, created_at],
         )
         .expect("chat log should seed");
+    }
+
+    #[test]
+    fn member_prompt_reads_current_member_scoped_value_only() {
+        let (db, dir) = create_test_database("member-prompt-scope");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            conn.execute(
+                "INSERT INTO system_config (id, config_key, config_value, updated_at)
+                 VALUES ('cfg-a', 'member:user-1:member-a:user_custom_prompt_template', '成员A提示词', '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("member A prompt should seed");
+            conn.execute(
+                "INSERT INTO system_config (id, config_key, config_value, updated_at)
+                 VALUES ('cfg-b', 'member:user-1:member-b:user_custom_prompt_template', '成员B提示词', '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("member B prompt should seed");
+
+            let value_a =
+                read_member_scoped_config(conn, "user-1", "member-a", "user_custom_prompt_template");
+            let value_b =
+                read_member_scoped_config(conn, "user-1", "member-b", "user_custom_prompt_template");
+
+            assert_eq!(value_a, "成员A提示词");
+            assert_eq!(value_b, "成员B提示词");
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn member_prompt_does_not_fallback_to_global_template() {
+        let (db, dir) = create_test_database("member-prompt-no-global-fallback");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            conn.execute(
+                "INSERT INTO system_config (id, config_key, config_value, updated_at)
+                 VALUES ('cfg-global', 'user_custom_prompt_template', '全局提示词', '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("global prompt should seed");
+
+            let value =
+                read_member_scoped_config(conn, "user-1", "member-a", "user_custom_prompt_template");
+
+            assert_eq!(value, "");
+        }
+        cleanup_test_database(&db, dir);
     }
 
     #[test]

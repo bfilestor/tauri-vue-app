@@ -51,23 +51,7 @@ fn load_config_value(
 
     match result {
         Ok(value) => Ok(value),
-        Err(rusqlite::Error::QueryReturnedNoRows) => {
-            // 成员级配置允许回退全局默认值，避免旧版本升级后首次读取直接丢失。
-            if effective_key != key {
-                let fallback = conn.query_row(
-                    "SELECT config_value FROM system_config WHERE config_key = ?1",
-                    [key],
-                    |row| row.get::<_, String>(0),
-                );
-                match fallback {
-                    Ok(value) => Ok(value),
-                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(String::new()),
-                    Err(e) => Err(format!("读取配置失败: {}", e)),
-                }
-            } else {
-                Ok(String::new())
-            }
-        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(String::new()),
         Err(e) => Err(format!("读取配置失败: {}", e)),
     }
 }
@@ -193,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn member_scoped_config_can_fallback_to_global_value() {
+    fn member_scoped_config_does_not_fallback_to_global_value() {
         let conn = create_test_conn();
 
         conn.execute(
@@ -212,8 +196,8 @@ mod tests {
                 member_name: Some("本人".to_string()),
             }),
         )
-        .expect("member scoped load should fallback to global");
+        .expect("member scoped load should return empty when missing");
 
-        assert_eq!(value, "全局默认提示词");
+        assert_eq!(value, "");
     }
 }

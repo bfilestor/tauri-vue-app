@@ -407,6 +407,9 @@
                   <p class="text-xs text-slate-500 leading-relaxed">
                     请在此填写患者的基本信息（年龄、性别、身高、体重、病史等）。此内容将作为背景信息随每次 AI 问答一起发送，无需每次重复填写。
                   </p>
+                  <p class="text-xs text-slate-400 mt-1">
+                    当前成员：{{ accountContextState.currentMember?.memberName || '未选择' }}（仅对当前成员生效）
+                  </p>
                 </template>
                 <el-input
                   v-model="userCustomPrompt"
