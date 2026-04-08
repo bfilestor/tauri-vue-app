@@ -141,6 +141,12 @@ const loading = ref(false)
 const trendData = ref([])
 const timeRange = ref(5)
 
+const normalizeProjectName = (project) => {
+  const normalizedName = String(project?.name ?? '').trim()
+  const normalizedDescription = String(project?.description ?? '').trim()
+  return normalizedName || normalizedDescription || '未命名项目'
+}
+
 const filteredTrendData = computed(() => {
     if (!trendData.value || trendData.value.length === 0) return []
     
@@ -177,10 +183,12 @@ watch(timeRange, () => {
 
 watch(
   () => accountContextState.currentMember?.memberId,
-  (nextMemberId, prevMemberId) => {
+  async (nextMemberId, prevMemberId) => {
     if (!nextMemberId || nextMemberId === prevMemberId) {
       return
     }
+
+    await loadProjects()
 
     if (selectedProjectId.value) {
       void loadTrends()
@@ -208,10 +216,20 @@ const loadProjects = async () => {
     const scope = buildMemberScope()
     if (!scope) {
       projects.value = []
+      selectedProjectId.value = ''
       return
     }
     const all = await invoke('list_projects', { scope })
-    projects.value = all.filter(p => p.is_active)
+    projects.value = all
+      .filter(p => p.is_active)
+      .map(p => ({
+        ...p,
+        name: normalizeProjectName(p),
+      }))
+    const hasSelectedProject = projects.value.some(p => p.id === selectedProjectId.value)
+    if (!hasSelectedProject) {
+      selectedProjectId.value = ''
+    }
   } catch (e) {
     console.error('加载项目失败:', e)
   }

@@ -621,6 +621,12 @@ const selectedProjectId = ref('')
 const ALL_CATEGORY_VALUE = '__all__'
 const selectedFileCategoryId = ref(ALL_CATEGORY_VALUE)
 
+const normalizeProjectName = (project) => {
+  const normalizedName = String(project?.name ?? '').trim()
+  const normalizedDescription = String(project?.description ?? '').trim()
+  return normalizedName || normalizedDescription || '未命名项目'
+}
+
 const fileCategoryOptions = computed(() => [
   { id: ALL_CATEGORY_VALUE, name: '全部' },
   ...activeProjects.value.map(p => ({ id: p.id, name: p.name })),
@@ -632,16 +638,23 @@ const loadProjects = async () => {
     if (!scope) {
       activeProjects.value = []
       selectedProjectId.value = ''
+      selectedFileCategoryId.value = ALL_CATEGORY_VALUE
       return
     }
 
     const all = await invoke('list_projects', { scope })
-    activeProjects.value = all.filter(p => p.is_active)
+    activeProjects.value = all
+      .filter(p => p.is_active)
+      .map(p => ({
+        ...p,
+        name: normalizeProjectName(p),
+      }))
     if (!selectedFileCategoryId.value) {
       selectedFileCategoryId.value = ALL_CATEGORY_VALUE
     }
-    if (activeProjects.value.length > 0 && !selectedProjectId.value) {
-      selectedProjectId.value = activeProjects.value[0].id
+    const hasSelectedProject = activeProjects.value.some(p => p.id === selectedProjectId.value)
+    if (!hasSelectedProject) {
+      selectedProjectId.value = activeProjects.value[0]?.id || ''
     }
   } catch (e) {
     console.error('加载项目失败:', e)
