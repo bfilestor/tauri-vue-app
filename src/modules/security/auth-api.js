@@ -36,11 +36,24 @@ export function createAuthApi({ client, storage, autoBindRefresh = true } = {}) 
 
   const sessionStore = createAuthSessionStore(storage ?? client.storage)
 
+  async function initializeDeviceCredentialAfterAuth() {
+    if (typeof client.initialize !== 'function') {
+      return
+    }
+
+    try {
+      await client.initialize()
+    } catch (error) {
+      console.warn('[auth] device activation after auth failed', error)
+    }
+  }
+
   async function loginByPassword(payload) {
     const response = await client.post('/app-api/auth/login/password', payload, {}, { skipAuthRefresh: true })
     const nextSession = sessionStore.setAuthenticatedSession(normalizeAuthPayload(response), {
       trialGiftPending: false,
     })
+    await initializeDeviceCredentialAfterAuth()
 
     return {
       ...response,
@@ -53,6 +66,7 @@ export function createAuthApi({ client, storage, autoBindRefresh = true } = {}) 
     const nextSession = sessionStore.setAuthenticatedSession(normalizeAuthPayload(response), {
       trialGiftPending: true,
     })
+    await initializeDeviceCredentialAfterAuth()
 
     return {
       ...response,

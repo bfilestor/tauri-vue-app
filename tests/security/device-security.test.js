@@ -30,8 +30,42 @@ function createRuntimeInfo() {
   }
 }
 
-test('首次启动会生成设备标识并触发激活', async () => {
+test('未登录启动仅生成设备标识，不触发激活请求', async () => {
   const storage = createMemoryStorage()
+  const requests = []
+
+  const state = await ensureDeviceReady({
+    storage,
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init })
+      return jsonResponse({
+        code: 200,
+        data: {
+          activationStatus: 'ACTIVE',
+          credentialVersion: 'cred-v1',
+          expireTime: 1893456000000,
+          deviceSecret: 'secret-v1',
+        },
+      })
+    },
+    baseUrl: 'https://api.example.com',
+    runtimeInfo: createRuntimeInfo(),
+    now: () => 1775000000000,
+    nonceFactory: () => 'nonce-activate',
+  })
+
+  assert.equal(requests.length, 0)
+  assert.equal(state.clientId, 'desktop-tauri')
+  assert.match(state.deviceId, /^desktop-/)
+  assert.equal(state.deviceSecret, '')
+  assert.equal(getSecurityState(storage).credentialVersion, '')
+})
+
+test('登录后激活会携带 token 与 userId', async () => {
+  const storage = createMemoryStorage({
+    [SECURITY_STORAGE_KEYS.accessToken]: 'access-activate',
+    [SECURITY_STORAGE_KEYS.userId]: '10001',
+  })
   const requests = []
 
   const state = await ensureDeviceReady({
@@ -56,8 +90,10 @@ test('首次启动会生成设备标识并触发激活', async () => {
 
   assert.equal(requests.length, 1)
   assert.equal(new URL(requests[0].url).pathname, '/app-api/client/activate')
-  assert.equal(state.clientId, 'desktop-tauri')
-  assert.match(state.deviceId, /^desktop-/)
+  const headers = new Headers(requests[0].init.headers)
+  const payload = JSON.parse(requests[0].init.body)
+  assert.equal(headers.get('Authorization'), 'Bearer access-activate')
+  assert.equal(payload.userId, 10001)
   assert.equal(state.deviceSecret, 'secret-v1')
   assert.equal(getSecurityState(storage).credentialVersion, 'cred-v1')
 })
@@ -169,7 +205,10 @@ test('设备凭证过期时会先续期再继续高价值请求', async () => {
 })
 
 test('兼容模式会记录状态且不阻断低价值接口', async () => {
-  const storage = createMemoryStorage()
+  const storage = createMemoryStorage({
+    [SECURITY_STORAGE_KEYS.accessToken]: 'access-compat',
+    [SECURITY_STORAGE_KEYS.userId]: '10002',
+  })
 
   const state = await ensureDeviceReady({
     storage,

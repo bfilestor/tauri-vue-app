@@ -359,6 +359,11 @@ export function createRequestClient(initialConfig = {}) {
       })
     }
 
+    const activationAuth = {
+      accessToken: storage.getString(SECURITY_STORAGE_KEYS.accessToken),
+      userId: readStoredUserId(storage),
+    }
+
     return ensureDeviceReady({
       storage,
       fetchImpl,
@@ -368,6 +373,7 @@ export function createRequestClient(initialConfig = {}) {
       nonceFactory: config.nonceFactory,
       activationSecretProof: config.activationSecretProof,
       activateSignatureFactory: config.activateSignatureFactory,
+      activationAuth,
       compatibilityErrorCodes: config.compatibilityErrorCodes,
       signatureMode: config.signatureMode,
     })

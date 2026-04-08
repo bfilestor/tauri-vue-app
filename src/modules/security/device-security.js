@@ -91,6 +91,28 @@ function normalizeErrorCode(payload, status) {
   return `HTTP_${status}`
 }
 
+function normalizeUserId(value) {
+  if (value == null || value === '') {
+    return null
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : trimmed
+  }
+
+  return null
+}
+
 function createServiceError(message, code, cause) {
   const error = new Error(message)
   error.code = code
@@ -299,6 +321,7 @@ export function ensureDeviceIdentity({
 export async function createActivationPayload({
   storage: storageInput,
   runtimeInfo,
+  userId,
   now = () => Date.now(),
   nonceFactory = createNonce,
   activationSecretProof = 'init-secret-proof',
@@ -315,6 +338,7 @@ export async function createActivationPayload({
     osName: runtimeInfo.osName || 'Desktop',
     osVersion: runtimeInfo.osVersion || 'unknown',
   }
+  const normalizedUserId = normalizeUserId(userId)
   const payload = {
     clientId: identity.clientId,
     deviceId: identity.deviceId,
@@ -328,6 +352,9 @@ export async function createActivationPayload({
     secretProof: activationSecretProof,
     activateTime,
     nonce,
+  }
+  if (normalizedUserId != null) {
+    payload.userId = normalizedUserId
   }
   const signature = activateSignatureFactory
     ? await activateSignatureFactory({ payload, storage, runtimeInfo: normalizedRuntimeInfo })
@@ -344,15 +371,25 @@ export async function activateDevice({
   fetchImpl,
   baseUrl,
   runtimeInfo,
+  accessToken,
+  userId,
   now = () => Date.now(),
   nonceFactory = createNonce,
   activationSecretProof,
   activateSignatureFactory,
 }) {
   const storage = createStorageAdapter(storageInput)
+  const normalizedUserId = normalizeUserId(userId)
+  if (!accessToken || normalizedUserId == null) {
+    throw createServiceError(
+      'Device activation requires authenticated user context.',
+      'ACTIVATION_AUTH_REQUIRED',
+    )
+  }
   const activationPayload = await createActivationPayload({
     storage,
     runtimeInfo,
+    userId: normalizedUserId,
     now,
     nonceFactory,
     activationSecretProof,
@@ -363,6 +400,9 @@ export async function activateDevice({
     baseUrl,
     requestPath: '/app-api/client/activate',
     payload: activationPayload,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   })
 
   persistCredential(storage, responseData || {})
@@ -433,6 +473,7 @@ export async function ensureDeviceReady({
   deviceIdFactory = createStableDeviceId,
   activationSecretProof = 'init-secret-proof',
   activateSignatureFactory,
+  activationAuth = null,
   compatibilityErrorCodes = DEFAULT_COMPATIBILITY_ERROR_CODES,
   signatureMode = SIGNATURE_MODE.required,
 }) {
@@ -465,11 +506,26 @@ export async function ensureDeviceReady({
       })
     }
 
+    const resolvedActivationAuth = activationAuth && typeof activationAuth === 'object'
+      ? activationAuth
+      : {}
+    const accessToken = resolvedActivationAuth.accessToken || storage.getString(SECURITY_STORAGE_KEYS.accessToken)
+    const activationUserId = normalizeUserId(
+      resolvedActivationAuth.userId
+      ?? storage.getString(SECURITY_STORAGE_KEYS.userId),
+    )
+
+    if (!accessToken || activationUserId == null) {
+      return getSecurityState(storage)
+    }
+
     return await activateDevice({
       storage,
       fetchImpl,
       baseUrl,
       runtimeInfo,
+      accessToken,
+      userId: activationUserId,
       now,
       nonceFactory,
       activationSecretProof,

@@ -20,24 +20,44 @@ function jsonResponse(payload, status = 200) {
 
 test('密码登录会持久化会话并支持恢复', async () => {
   const storage = createMemoryStorage()
+  const requests = []
   const client = createRequestClient({
     storage,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname
-      assert.equal(pathname, '/app-api/auth/login/password')
-      return jsonResponse({
-        code: 200,
-        data: {
-          accessToken: 'access-001',
-          refreshToken: 'refresh-001',
-          expireIn: 7200,
-          userInfo: {
-            userId: 1001,
-            userName: 'demo-user',
-            nickName: 'Demo',
+      requests.push(pathname)
+      if (pathname === '/app-api/auth/login/password') {
+        return jsonResponse({
+          code: 200,
+          data: {
+            accessToken: 'access-001',
+            refreshToken: 'refresh-001',
+            expireIn: 7200,
+            userInfo: {
+              userId: 1001,
+              userName: 'demo-user',
+              nickName: 'Demo',
+            },
           },
-        },
-      })
+        })
+      }
+
+      if (pathname === '/app-api/client/activate') {
+        const headers = new Headers(init.headers)
+        const payload = JSON.parse(init.body)
+        assert.equal(headers.get('Authorization'), 'Bearer access-001')
+        assert.equal(payload.userId, 1001)
+        return jsonResponse({
+          code: 200,
+          data: {
+            credentialVersion: 'cred-login',
+            expireTime: 1893456000000,
+            deviceSecret: 'secret-login',
+          },
+        })
+      }
+
+      throw new Error(`unexpected request: ${pathname}`)
     },
     baseUrl: 'https://api.example.com',
   })
@@ -62,6 +82,7 @@ test('密码登录会持久化会话并支持恢复', async () => {
   assert.equal(restored.refreshToken, 'refresh-001')
   assert.equal(restored.userId, 1001)
   assert.equal(restored.userInfo?.userName, 'demo-user')
+  assert.equal(requests.includes('/app-api/client/activate'), true)
 })
 
 test('退出登录会清理认证凭证但保留设备身份', async () => {
@@ -105,19 +126,39 @@ test('退出登录会清理认证凭证但保留设备身份', async () => {
 
 test('登录响应仅返回 userId 时会写入会话 userId', async () => {
   const storage = createMemoryStorage()
+  const requests = []
   const client = createRequestClient({
     storage,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname
-      assert.equal(pathname, '/app-api/auth/login/password')
-      return jsonResponse({
-        code: 200,
-        data: {
-          accessToken: 'access-flat-userid',
-          refreshToken: 'refresh-flat-userid',
-          userId: 10003,
-        },
-      })
+      requests.push(pathname)
+      if (pathname === '/app-api/auth/login/password') {
+        return jsonResponse({
+          code: 200,
+          data: {
+            accessToken: 'access-flat-userid',
+            refreshToken: 'refresh-flat-userid',
+            userId: 10003,
+          },
+        })
+      }
+
+      if (pathname === '/app-api/client/activate') {
+        const headers = new Headers(init.headers)
+        const payload = JSON.parse(init.body)
+        assert.equal(headers.get('Authorization'), 'Bearer access-flat-userid')
+        assert.equal(payload.userId, 10003)
+        return jsonResponse({
+          code: 200,
+          data: {
+            credentialVersion: 'cred-flat',
+            expireTime: 1893456000000,
+            deviceSecret: 'secret-flat',
+          },
+        })
+      }
+
+      throw new Error(`unexpected request: ${pathname}`)
     },
     baseUrl: 'https://api.example.com',
   })
@@ -132,27 +173,48 @@ test('登录响应仅返回 userId 时会写入会话 userId', async () => {
   assert.equal(state.userId, 10003)
   assert.equal(state.userInfo?.userId, 10003)
   assert.equal(client.storage.getString(SECURITY_STORAGE_KEYS.userId), '10003')
+  assert.equal(requests.includes('/app-api/client/activate'), true)
 })
 
 test('邮箱注册成功后进入登录态并标记试用提示', async () => {
   const storage = createMemoryStorage()
+  const requests = []
   const client = createRequestClient({
     storage,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname
-      assert.equal(pathname, '/app-api/auth/register/email')
-      return jsonResponse({
-        code: 200,
-        data: {
-          accessToken: 'access-register',
-          refreshToken: 'refresh-register',
-          expireIn: 7200,
-          userInfo: {
-            userId: 3003,
-            userName: 'mail-user',
+      requests.push(pathname)
+      if (pathname === '/app-api/auth/register/email') {
+        return jsonResponse({
+          code: 200,
+          data: {
+            accessToken: 'access-register',
+            refreshToken: 'refresh-register',
+            expireIn: 7200,
+            userInfo: {
+              userId: 3003,
+              userName: 'mail-user',
+            },
           },
-        },
-      })
+        })
+      }
+
+      if (pathname === '/app-api/client/activate') {
+        const headers = new Headers(init.headers)
+        const payload = JSON.parse(init.body)
+        assert.equal(headers.get('Authorization'), 'Bearer access-register')
+        assert.equal(payload.userId, 3003)
+        return jsonResponse({
+          code: 200,
+          data: {
+            credentialVersion: 'cred-register',
+            expireTime: 1893456000000,
+            deviceSecret: 'secret-register',
+          },
+        })
+      }
+
+      throw new Error(`unexpected request: ${pathname}`)
     },
     baseUrl: 'https://api.example.com',
   })
@@ -171,6 +233,7 @@ test('邮箱注册成功后进入登录态并标记试用提示', async () => {
   assert.equal(state.userId, 3003)
   assert.equal(state.isGuest, false)
   assert.equal(state.trialGiftPending, true)
+  assert.equal(requests.includes('/app-api/client/activate'), true)
 })
 
 test('登录态接口遇到 401 时会自动刷新并重试一次', async () => {
