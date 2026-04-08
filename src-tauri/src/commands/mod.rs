@@ -2,6 +2,7 @@ pub mod ai;
 pub mod config;
 pub mod file;
 pub mod indicator;
+pub mod member;
 pub mod ocr;
 pub mod project;
 pub mod provider;
