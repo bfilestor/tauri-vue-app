@@ -1,9 +1,10 @@
 use super::scope::{
     resolve_chat_scope, resolve_member_scope, touch_conversation, ChatScopeInput,
-    MemberScopeInput,
+    MemberScopeInput, ResolvedChatScope, ResolvedMemberScope,
 };
 use crate::commands::ocr::OcrParsedItem;
 use crate::db::Database;
+use rusqlite::Connection;
 use crate::services::http_client;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -490,16 +491,11 @@ pub async fn start_ai_analysis(
 }
 
 /// 获取 AI 分析结果
-#[tauri::command]
-pub fn get_ai_analysis(
+fn get_ai_analysis_with_conn(
+    conn: &Connection,
     record_id: String,
-    scope: Option<MemberScopeInput>,
-    db: tauri::State<Database>,
+    scope: &ResolvedMemberScope,
 ) -> Result<Vec<AiAnalysis>, String> {
-    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    let scope = resolve_member_scope(conn, scope)?;
-
     let mut stmt = conn
         .prepare(
             "SELECT id, record_id, request_prompt, response_content, model_used, status, error_message, created_at
@@ -529,6 +525,18 @@ pub fn get_ai_analysis(
         .map_err(|e| format!("解析数据失败: {}", e))?;
 
     Ok(results)
+}
+
+#[tauri::command]
+pub fn get_ai_analysis(
+    record_id: String,
+    scope: Option<MemberScopeInput>,
+    db: tauri::State<Database>,
+) -> Result<Vec<AiAnalysis>, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
+    get_ai_analysis_with_conn(conn, record_id, &scope)
 }
 
 /// 更新 AI 分析错误状态
@@ -574,17 +582,12 @@ pub struct AiAnalysisHistoryItem {
 }
 
 /// 获取历史 AI 分析记录（分页）
-#[tauri::command]
-pub fn get_ai_analyses_history(
+fn get_ai_analyses_history_with_conn(
+    conn: &Connection,
     page: i64,
     size: i64,
-    scope: Option<MemberScopeInput>,
-    db: tauri::State<Database>,
+    scope: &ResolvedMemberScope,
 ) -> Result<Vec<AiAnalysisHistoryItem>, String> {
-    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    let scope = resolve_member_scope(conn, scope)?;
-
     let offset = (page - 1) * size;
     let mut stmt = conn
         .prepare(
@@ -618,18 +621,26 @@ pub fn get_ai_analyses_history(
     Ok(results)
 }
 
-/// 更新 AI 分析内容（编辑保存）
 #[tauri::command]
-pub fn update_ai_analysis_content(
-    id: String,
-    content: String,
+pub fn get_ai_analyses_history(
+    page: i64,
+    size: i64,
     scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
-) -> Result<bool, String> {
+) -> Result<Vec<AiAnalysisHistoryItem>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let scope = resolve_member_scope(conn, scope)?;
+    get_ai_analyses_history_with_conn(conn, page, size, &scope)
+}
 
+/// 更新 AI 分析内容（编辑保存）
+fn update_ai_analysis_content_with_conn(
+    conn: &Connection,
+    id: String,
+    content: String,
+    scope: &ResolvedMemberScope,
+) -> Result<bool, String> {
     conn.execute(
         "UPDATE ai_analyses
          SET response_content = ?1
@@ -641,6 +652,19 @@ pub fn update_ai_analysis_content(
     Ok(true)
 }
 
+#[tauri::command]
+pub fn update_ai_analysis_content(
+    id: String,
+    content: String,
+    scope: Option<MemberScopeInput>,
+    db: tauri::State<Database>,
+) -> Result<bool, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
+    update_ai_analysis_content_with_conn(conn, id, content, &scope)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub id: String,
@@ -650,17 +674,12 @@ pub struct ChatMessage {
 }
 
 /// 获取聊天历史
-#[tauri::command]
-pub fn get_chat_history(
+fn get_chat_history_with_conn(
+    conn: &Connection,
     limit: i64,
     offset: i64,
-    scope: Option<ChatScopeInput>,
-    db: tauri::State<Database>,
+    chat_scope: &ResolvedChatScope,
 ) -> Result<Vec<ChatMessage>, String> {
-    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    let chat_scope = resolve_chat_scope(conn, scope)?;
-
     // Return DESC order (newest first) for easier pagination
     let mut stmt = conn
         .prepare(
@@ -696,16 +715,24 @@ pub fn get_chat_history(
     Ok(results)
 }
 
-/// 清空聊天历史
 #[tauri::command]
-pub fn clear_chat_history(
+pub fn get_chat_history(
+    limit: i64,
+    offset: i64,
     scope: Option<ChatScopeInput>,
     db: tauri::State<Database>,
-) -> Result<bool, String> {
+) -> Result<Vec<ChatMessage>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let chat_scope = resolve_chat_scope(conn, scope)?;
+    get_chat_history_with_conn(conn, limit, offset, &chat_scope)
+}
 
+/// 清空聊天历史
+fn clear_chat_history_with_conn(
+    conn: &Connection,
+    chat_scope: &ResolvedChatScope,
+) -> Result<bool, String> {
     conn.execute(
         "DELETE FROM chat_logs
          WHERE owner_user_id = ?1 AND member_id = ?2 AND conversation_id = ?3",
@@ -720,6 +747,17 @@ pub fn clear_chat_history(
     touch_conversation(conn, &chat_scope.conversation_id)?;
 
     Ok(true)
+}
+
+#[tauri::command]
+pub fn clear_chat_history(
+    scope: Option<ChatScopeInput>,
+    db: tauri::State<Database>,
+) -> Result<bool, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let chat_scope = resolve_chat_scope(conn, scope)?;
+    clear_chat_history_with_conn(conn, &chat_scope)
 }
 
 /// 与 AI 对话（流式）
@@ -965,4 +1003,199 @@ pub async fn chat_with_ai(
     });
 
     Ok(ai_msg_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn create_test_database(name: &str) -> (Database, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "health-monitor-ai-tests-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ));
+        let db = Database::new(dir.clone()).expect("database should initialize");
+        (db, dir)
+    }
+
+    fn cleanup_test_database(db: &Database, dir: PathBuf) {
+        db.close().ok();
+        fs::remove_dir_all(dir).ok();
+    }
+
+    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+        ResolvedMemberScope {
+            owner_user_id: owner_user_id.to_string(),
+            member_id: member_id.to_string(),
+            member_name: member_name.to_string(),
+        }
+    }
+
+    fn chat_scope(
+        owner_user_id: &str,
+        member_id: &str,
+        member_name: &str,
+        conversation_id: &str,
+    ) -> ResolvedChatScope {
+        ResolvedChatScope {
+            owner_user_id: owner_user_id.to_string(),
+            member_id: member_id.to_string(),
+            member_name: member_name.to_string(),
+            conversation_id: conversation_id.to_string(),
+        }
+    }
+
+    fn seed_analysis_record(
+        conn: &Connection,
+        owner_user_id: &str,
+        member_id: &str,
+        record_id: &str,
+        analysis_id: &str,
+        checkup_date: &str,
+        content: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO checkup_records (
+                id, owner_user_id, member_id, member_name_snapshot, checkup_date, status, notes, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, '成员', ?4, 'ai_done', '', '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![record_id, owner_user_id, member_id, checkup_date],
+        )
+        .expect("record should seed");
+        conn.execute(
+            "INSERT INTO ai_analyses (
+                id, owner_user_id, member_id, record_id, request_prompt, response_content, model_used, status, error_message, created_at
+             ) VALUES (?1, ?2, ?3, ?4, '', ?5, 'gpt-test', 'success', '', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![analysis_id, owner_user_id, member_id, record_id, content],
+        )
+        .expect("analysis should seed");
+    }
+
+    fn seed_conversation(
+        conn: &Connection,
+        conversation_id: &str,
+        owner_user_id: &str,
+        member_id: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO chat_conversations (id, owner_user_id, member_id, title, created_at, updated_at)
+             VALUES (?1, ?2, ?3, '默认会话', '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![conversation_id, owner_user_id, member_id],
+        )
+        .expect("conversation should seed");
+    }
+
+    fn seed_chat_message(
+        conn: &Connection,
+        id: &str,
+        owner_user_id: &str,
+        member_id: &str,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        created_at: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO chat_logs (id, owner_user_id, member_id, conversation_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![id, owner_user_id, member_id, conversation_id, role, content, created_at],
+        )
+        .expect("chat log should seed");
+    }
+
+    #[test]
+    fn get_ai_analyses_history_only_returns_current_member_rows() {
+        let (db, dir) = create_test_database("analysis-history");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            seed_analysis_record(conn, "user-1", "member-a", "record-a", "analysis-a", "2026-04-07", "成员A分析");
+            seed_analysis_record(conn, "user-1", "member-b", "record-b", "analysis-b", "2026-04-08", "成员B分析");
+
+            let history = get_ai_analyses_history_with_conn(
+                conn,
+                1,
+                20,
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("history should load");
+
+            assert_eq!(history.len(), 1);
+            assert_eq!(history[0].id, "analysis-a");
+            assert_eq!(history[0].record_id, "record-a");
+            assert_eq!(history[0].response_content, "成员A分析");
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn get_chat_history_only_returns_requested_member_conversation() {
+        let (db, dir) = create_test_database("chat-history");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            seed_conversation(conn, "conv-a", "user-1", "member-a");
+            seed_conversation(conn, "conv-b", "user-1", "member-b");
+            seed_chat_message(conn, "msg-a1", "user-1", "member-a", "conv-a", "user", "成员A提问", "2026-04-08T10:00:00+08:00");
+            seed_chat_message(conn, "msg-a2", "user-1", "member-a", "conv-a", "assistant", "成员A回答", "2026-04-08T10:01:00+08:00");
+            seed_chat_message(conn, "msg-b1", "user-1", "member-b", "conv-b", "user", "成员B提问", "2026-04-08T10:02:00+08:00");
+
+            let history = get_chat_history_with_conn(
+                conn,
+                20,
+                0,
+                &chat_scope("user-1", "member-a", "本人", "conv-a"),
+            )
+            .expect("chat history should load");
+
+            assert_eq!(history.len(), 2);
+            assert!(history.iter().all(|item| item.content.contains('A')));
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn clear_chat_history_only_deletes_current_member_conversation_rows() {
+        let (db, dir) = create_test_database("clear-chat");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            seed_conversation(conn, "conv-a", "user-1", "member-a");
+            seed_conversation(conn, "conv-b", "user-1", "member-b");
+            seed_chat_message(conn, "msg-a1", "user-1", "member-a", "conv-a", "user", "成员A提问", "2026-04-08T10:00:00+08:00");
+            seed_chat_message(conn, "msg-a2", "user-1", "member-a", "conv-a", "assistant", "成员A回答", "2026-04-08T10:01:00+08:00");
+            seed_chat_message(conn, "msg-b1", "user-1", "member-b", "conv-b", "user", "成员B提问", "2026-04-08T10:02:00+08:00");
+
+            clear_chat_history_with_conn(
+                conn,
+                &chat_scope("user-1", "member-a", "本人", "conv-a"),
+            )
+            .expect("chat history should clear");
+
+            let remaining_member_a_logs: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM chat_logs WHERE owner_user_id = 'user-1' AND member_id = 'member-a' AND conversation_id = 'conv-a'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("count should work");
+            let remaining_member_b_logs: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM chat_logs WHERE owner_user_id = 'user-1' AND member_id = 'member-b' AND conversation_id = 'conv-b'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("count should work");
+
+            assert_eq!(remaining_member_a_logs, 0);
+            assert_eq!(remaining_member_b_logs, 1);
+        }
+        cleanup_test_database(&db, dir);
+    }
 }
