@@ -1,13 +1,40 @@
 use super::scope::{
-    resolve_chat_scope, resolve_member_scope, touch_conversation, ChatScopeInput,
-    MemberScopeInput, ResolvedChatScope, ResolvedMemberScope,
+    ChatScopeInput, MemberScopeInput, ResolvedChatScope, ResolvedMemberScope, resolve_chat_scope,
+    resolve_member_scope, touch_conversation,
 };
 use crate::commands::ocr::OcrParsedItem;
 use crate::db::Database;
-use rusqlite::Connection;
 use crate::services::http_client;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
+
+fn read_member_scoped_config_with_fallback(
+    conn: &Connection,
+    owner_user_id: &str,
+    member_id: &str,
+    key: &str,
+) -> String {
+    let scoped_key = format!("member:{owner_user_id}:{member_id}:{key}");
+    let scoped_value: Option<String> = conn
+        .query_row(
+            "SELECT config_value FROM system_config WHERE config_key = ?1",
+            [&scoped_key],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(value) = scoped_value {
+        return value;
+    }
+
+    conn.query_row(
+        "SELECT config_value FROM system_config WHERE config_key = ?1",
+        [key],
+        |row| row.get(0),
+    )
+    .unwrap_or_default()
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AiAnalysis {
@@ -140,19 +167,22 @@ pub async fn start_ai_analysis(
             });
 
         // 获取用户自定义 Prompt（患者情况说明）
-        let user_custom_prompt: String = conn
-            .query_row(
-                "SELECT config_value FROM system_config WHERE config_key = 'user_custom_prompt_template'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or_default();
+        let user_custom_prompt = read_member_scoped_config_with_fallback(
+            conn,
+            &scope.owner_user_id,
+            &scope.member_id,
+            "user_custom_prompt_template",
+        );
 
         // 拼接系统级 Prompt：用户自定义在前，AI 分析指令在后
         let ai_prompt = if user_custom_prompt.trim().is_empty() {
             ai_analysis_prompt
         } else {
-            format!("{}\n\n{}", user_custom_prompt.trim(), ai_analysis_prompt.trim())
+            format!(
+                "{}\n\n{}",
+                user_custom_prompt.trim(),
+                ai_analysis_prompt.trim()
+            )
         };
 
         // 获取当前检查记录的 OCR 数据
@@ -184,12 +214,13 @@ pub async fn start_ai_analysis(
             .query_map(
                 rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
                 |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1).unwrap_or_default(),
-                    row.get::<_, String>(2)?,
-                ))
-            })
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1).unwrap_or_default(),
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
             .map_err(|e| format!("查询失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("解析数据失败: {}", e))?;
@@ -235,9 +266,8 @@ pub async fn start_ai_analysis(
             let ocr_data: Vec<(String, String)> = ocr_stmt
                 .query_map(
                     rusqlite::params![&hist_id, &scope.owner_user_id, &scope.member_id],
-                    |row| {
-                    Ok((row.get(0)?, row.get(1).unwrap_or_default()))
-                })
+                    |row| Ok((row.get(0)?, row.get(1).unwrap_or_default())),
+                )
                 .map_err(|e| format!("查询历史OCR失败: {}", e))?
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap_or_default();
@@ -268,7 +298,7 @@ pub async fn start_ai_analysis(
         // 3. 获取上一次成功的 AI 分析建议
         let last_ai_suggestion: Option<String> = conn
             .query_row(
-            "SELECT response_content FROM ai_analyses a 
+                "SELECT response_content FROM ai_analyses a 
              JOIN checkup_records r ON a.record_id = r.id
              WHERE r.id != ?1
                AND a.owner_user_id = ?2
@@ -509,17 +539,18 @@ fn get_ai_analysis_with_conn(
         .query_map(
             rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| {
-            Ok(AiAnalysis {
-                id: row.get(0)?,
-                record_id: row.get(1)?,
-                request_prompt: row.get(2)?,
-                response_content: row.get(3)?,
-                model_used: row.get(4)?,
-                status: row.get(5)?,
-                error_message: row.get(6)?,
-                created_at: row.get(7)?,
-            })
-        })
+                Ok(AiAnalysis {
+                    id: row.get(0)?,
+                    record_id: row.get(1)?,
+                    request_prompt: row.get(2)?,
+                    response_content: row.get(3)?,
+                    model_used: row.get(4)?,
+                    status: row.get(5)?,
+                    error_message: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            },
+        )
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析数据失败: {}", e))?;
@@ -606,14 +637,15 @@ fn get_ai_analyses_history_with_conn(
         .query_map(
             rusqlite::params![&scope.owner_user_id, &scope.member_id, size, offset],
             |row| {
-            Ok(AiAnalysisHistoryItem {
-                id: row.get(0)?,
-                record_id: row.get(1)?,
-                checkup_date: row.get(2)?,
-                response_content: row.get(3)?,
-                created_at: row.get(4)?,
-            })
-        })
+                Ok(AiAnalysisHistoryItem {
+                    id: row.get(0)?,
+                    record_id: row.get(1)?,
+                    checkup_date: row.get(2)?,
+                    response_content: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        )
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析数据失败: {}", e))?;
@@ -701,13 +733,14 @@ fn get_chat_history_with_conn(
                 offset
             ],
             |row| {
-            Ok(ChatMessage {
-                id: row.get(0)?,
-                role: row.get(1)?,
-                content: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        })
+                Ok(ChatMessage {
+                    id: row.get(0)?,
+                    role: row.get(1)?,
+                    content: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            },
+        )
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析数据失败: {}", e))?;
@@ -742,7 +775,7 @@ fn clear_chat_history_with_conn(
             &chat_scope.conversation_id
         ],
     )
-        .map_err(|e| format!("删除失败: {}", e))?;
+    .map_err(|e| format!("删除失败: {}", e))?;
 
     touch_conversation(conn, &chat_scope.conversation_id)?;
 
@@ -781,13 +814,12 @@ pub async fn chat_with_ai(
         let model = http_client::get_default_model(&conn);
 
         // 获取用户自定义 Prompt（患者情况说明）
-        let user_custom_prompt: String = conn
-            .query_row(
-                "SELECT config_value FROM system_config WHERE config_key = 'user_custom_prompt_template'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or_default();
+        let user_custom_prompt = read_member_scoped_config_with_fallback(
+            conn,
+            &chat_scope.owner_user_id,
+            &chat_scope.member_id,
+            "user_custom_prompt_template",
+        );
 
         // 获取 AI 分析 Prompt 模板
         let ai_analysis_prompt: String = conn
@@ -804,7 +836,11 @@ pub async fn chat_with_ai(
         let system_prompt = if user_custom_prompt.trim().is_empty() {
             ai_analysis_prompt
         } else {
-            format!("{}\n\n{}", user_custom_prompt.trim(), ai_analysis_prompt.trim())
+            format!(
+                "{}\n\n{}",
+                user_custom_prompt.trim(),
+                ai_analysis_prompt.trim()
+            )
         };
 
         // 获取最近 10 条历史记录作为上下文
@@ -1027,7 +1063,11 @@ mod tests {
         fs::remove_dir_all(dir).ok();
     }
 
-    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+    fn member_scope(
+        owner_user_id: &str,
+        member_id: &str,
+        member_name: &str,
+    ) -> ResolvedMemberScope {
         ResolvedMemberScope {
             owner_user_id: owner_user_id.to_string(),
             member_id: member_id.to_string(),
@@ -1113,8 +1153,24 @@ mod tests {
             let conn_guard = db.conn.lock().expect("lock should succeed");
             let conn = conn_guard.as_ref().expect("conn should exist");
 
-            seed_analysis_record(conn, "user-1", "member-a", "record-a", "analysis-a", "2026-04-07", "成员A分析");
-            seed_analysis_record(conn, "user-1", "member-b", "record-b", "analysis-b", "2026-04-08", "成员B分析");
+            seed_analysis_record(
+                conn,
+                "user-1",
+                "member-a",
+                "record-a",
+                "analysis-a",
+                "2026-04-07",
+                "成员A分析",
+            );
+            seed_analysis_record(
+                conn,
+                "user-1",
+                "member-b",
+                "record-b",
+                "analysis-b",
+                "2026-04-08",
+                "成员B分析",
+            );
 
             let history = get_ai_analyses_history_with_conn(
                 conn,
@@ -1141,9 +1197,36 @@ mod tests {
 
             seed_conversation(conn, "conv-a", "user-1", "member-a");
             seed_conversation(conn, "conv-b", "user-1", "member-b");
-            seed_chat_message(conn, "msg-a1", "user-1", "member-a", "conv-a", "user", "成员A提问", "2026-04-08T10:00:00+08:00");
-            seed_chat_message(conn, "msg-a2", "user-1", "member-a", "conv-a", "assistant", "成员A回答", "2026-04-08T10:01:00+08:00");
-            seed_chat_message(conn, "msg-b1", "user-1", "member-b", "conv-b", "user", "成员B提问", "2026-04-08T10:02:00+08:00");
+            seed_chat_message(
+                conn,
+                "msg-a1",
+                "user-1",
+                "member-a",
+                "conv-a",
+                "user",
+                "成员A提问",
+                "2026-04-08T10:00:00+08:00",
+            );
+            seed_chat_message(
+                conn,
+                "msg-a2",
+                "user-1",
+                "member-a",
+                "conv-a",
+                "assistant",
+                "成员A回答",
+                "2026-04-08T10:01:00+08:00",
+            );
+            seed_chat_message(
+                conn,
+                "msg-b1",
+                "user-1",
+                "member-b",
+                "conv-b",
+                "user",
+                "成员B提问",
+                "2026-04-08T10:02:00+08:00",
+            );
 
             let history = get_chat_history_with_conn(
                 conn,
@@ -1168,15 +1251,39 @@ mod tests {
 
             seed_conversation(conn, "conv-a", "user-1", "member-a");
             seed_conversation(conn, "conv-b", "user-1", "member-b");
-            seed_chat_message(conn, "msg-a1", "user-1", "member-a", "conv-a", "user", "成员A提问", "2026-04-08T10:00:00+08:00");
-            seed_chat_message(conn, "msg-a2", "user-1", "member-a", "conv-a", "assistant", "成员A回答", "2026-04-08T10:01:00+08:00");
-            seed_chat_message(conn, "msg-b1", "user-1", "member-b", "conv-b", "user", "成员B提问", "2026-04-08T10:02:00+08:00");
-
-            clear_chat_history_with_conn(
+            seed_chat_message(
                 conn,
-                &chat_scope("user-1", "member-a", "本人", "conv-a"),
-            )
-            .expect("chat history should clear");
+                "msg-a1",
+                "user-1",
+                "member-a",
+                "conv-a",
+                "user",
+                "成员A提问",
+                "2026-04-08T10:00:00+08:00",
+            );
+            seed_chat_message(
+                conn,
+                "msg-a2",
+                "user-1",
+                "member-a",
+                "conv-a",
+                "assistant",
+                "成员A回答",
+                "2026-04-08T10:01:00+08:00",
+            );
+            seed_chat_message(
+                conn,
+                "msg-b1",
+                "user-1",
+                "member-b",
+                "conv-b",
+                "user",
+                "成员B提问",
+                "2026-04-08T10:02:00+08:00",
+            );
+
+            clear_chat_history_with_conn(conn, &chat_scope("user-1", "member-a", "本人", "conv-a"))
+                .expect("chat history should clear");
 
             let remaining_member_a_logs: i64 = conn
                 .query_row(

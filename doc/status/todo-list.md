@@ -52,5 +52,8 @@
 | E4-S2-I2 | 报告、OCR、分析、趋势与 AI 对话成员级隔离 | Test Passed | E4-S1-I2, E4-S2-I1, E3-S2-I2 | `npm test` 60 项通过、`npm run build`、`cargo check`、`cargo test commands:: -- --nocapture` 17 项通过 | 已完成前端 scope 透传与 Tauri 命令层 owner/member/conversation 隔离，并补齐 scope/record/ai/trend/file/ocr 的成员隔离回归测试，不同成员的记录、OCR、分析、趋势与聊天上下文互不影响 |
 | E5-S1-I1 | Tauri 本地成员管理命令（CRUD + 设默认） | Test Passed | E4-S2-I1, E4-S2-I2 | `cargo test commands::member -- --nocapture`、`cargo check` 通过 | 已新增 `list/create/update/delete/set_default_family_member` 命令，覆盖首成员默认、跨用户隔离、删除默认重排、最后一个成员删除保护 |
 | E5-S1-I2 | 前端成员管理接入本地成员仓储并修复登录态展示 | Test Passed | E5-S1-I1 | `npm test` 60 项通过、`npm run build` 通过 | 账户上下文成员操作改为本地命令优先（无本地命令环境回退远端接口），设置页成员管理区改为仅访客态阻断，登录后可直接新增/编辑/删除/设默认 |
+| E6-S1-I1 | 成员仓储改为登录后云端权威源（禁用本地优先） | Test Passed | E5-S1-I2 | `npm test` 63 项通过 | `account-service` 成员仓储已移除本地优先路径，登录态成员列表/CRUD/设默认统一走 `/app-api/family-members` |
+| E6-S2-I1 | 患者信息 Prompt 改为成员级配置 | Test Passed | E6-S1-I1 | `cargo test commands::config -- --nocapture`、`cargo test commands::ai -- --nocapture`、`npm test` 通过 | `save_config/get_config` 新增成员作用域（key=`user_custom_prompt_template`），AI 分析与问答读取当前成员患者说明 |
+| E6-S2-I2 | 检查项目与指标成员化（schema + 命令 + 页面） | Test Passed | E6-S2-I1 | `cargo test commands:: -- --nocapture`、`cargo test db -- --nocapture`、`cargo check`、`npm run build` 通过 | `db.rs` 升级 V3 并为项目/指标加成员字段与索引；`project/indicator/ocr/trend/file/record` 与上传/趋势/设置页全部按当前成员作用域查询与写入 |
 
 

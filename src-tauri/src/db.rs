@@ -4,6 +4,7 @@ use std::sync::Mutex;
 
 const SCHEMA_VERSION_V1: i32 = 1;
 const SCHEMA_VERSION_V2: i32 = 2;
+const SCHEMA_VERSION_V3: i32 = 3;
 
 #[allow(dead_code)]
 pub const CONFIG_KEY_ACTIVE_OWNER_USER_ID: &str = "health.activeOwnerUserId";
@@ -111,10 +112,11 @@ impl Database {
 fn initialize_schema(conn: &mut Connection) -> Result<()> {
     let current_version = get_user_version(conn)?;
 
-    if current_version >= SCHEMA_VERSION_V2 {
+    if current_version >= SCHEMA_VERSION_V3 {
         let tx = conn.transaction()?;
         apply_v2_multi_user_schema(&tx)?;
-        set_user_version(&tx, SCHEMA_VERSION_V2)?;
+        apply_v3_member_scoped_project_schema(&tx)?;
+        set_user_version(&tx, SCHEMA_VERSION_V3)?;
         tx.commit()?;
         return Ok(());
     }
@@ -129,6 +131,11 @@ fn initialize_schema(conn: &mut Connection) -> Result<()> {
     if current_version < SCHEMA_VERSION_V2 {
         apply_v2_multi_user_schema(&tx)?;
         set_user_version(&tx, SCHEMA_VERSION_V2)?;
+    }
+
+    if current_version < SCHEMA_VERSION_V3 {
+        apply_v3_member_scoped_project_schema(&tx)?;
+        set_user_version(&tx, SCHEMA_VERSION_V3)?;
     }
 
     tx.commit()?;
@@ -349,11 +356,7 @@ fn apply_v2_multi_user_schema(tx: &Transaction<'_>) -> Result<()> {
         "checkup_records",
         "owner_user_id TEXT NOT NULL DEFAULT ''",
     )?;
-    add_column_if_missing(
-        tx,
-        "checkup_records",
-        "member_id TEXT NOT NULL DEFAULT ''",
-    )?;
+    add_column_if_missing(tx, "checkup_records", "member_id TEXT NOT NULL DEFAULT ''")?;
     add_column_if_missing(
         tx,
         "checkup_records",
@@ -365,60 +368,24 @@ fn apply_v2_multi_user_schema(tx: &Transaction<'_>) -> Result<()> {
         "checkup_files",
         "owner_user_id TEXT NOT NULL DEFAULT ''",
     )?;
-    add_column_if_missing(
-        tx,
-        "checkup_files",
-        "member_id TEXT NOT NULL DEFAULT ''",
-    )?;
+    add_column_if_missing(tx, "checkup_files", "member_id TEXT NOT NULL DEFAULT ''")?;
 
-    add_column_if_missing(
-        tx,
-        "ocr_results",
-        "owner_user_id TEXT NOT NULL DEFAULT ''",
-    )?;
-    add_column_if_missing(
-        tx,
-        "ocr_results",
-        "member_id TEXT NOT NULL DEFAULT ''",
-    )?;
+    add_column_if_missing(tx, "ocr_results", "owner_user_id TEXT NOT NULL DEFAULT ''")?;
+    add_column_if_missing(tx, "ocr_results", "member_id TEXT NOT NULL DEFAULT ''")?;
 
-    add_column_if_missing(
-        tx,
-        "ai_analyses",
-        "owner_user_id TEXT NOT NULL DEFAULT ''",
-    )?;
-    add_column_if_missing(
-        tx,
-        "ai_analyses",
-        "member_id TEXT NOT NULL DEFAULT ''",
-    )?;
+    add_column_if_missing(tx, "ai_analyses", "owner_user_id TEXT NOT NULL DEFAULT ''")?;
+    add_column_if_missing(tx, "ai_analyses", "member_id TEXT NOT NULL DEFAULT ''")?;
 
     add_column_if_missing(
         tx,
         "indicator_values",
         "owner_user_id TEXT NOT NULL DEFAULT ''",
     )?;
-    add_column_if_missing(
-        tx,
-        "indicator_values",
-        "member_id TEXT NOT NULL DEFAULT ''",
-    )?;
+    add_column_if_missing(tx, "indicator_values", "member_id TEXT NOT NULL DEFAULT ''")?;
 
-    add_column_if_missing(
-        tx,
-        "chat_logs",
-        "owner_user_id TEXT NOT NULL DEFAULT ''",
-    )?;
-    add_column_if_missing(
-        tx,
-        "chat_logs",
-        "member_id TEXT NOT NULL DEFAULT ''",
-    )?;
-    add_column_if_missing(
-        tx,
-        "chat_logs",
-        "conversation_id TEXT NOT NULL DEFAULT ''",
-    )?;
+    add_column_if_missing(tx, "chat_logs", "owner_user_id TEXT NOT NULL DEFAULT ''")?;
+    add_column_if_missing(tx, "chat_logs", "member_id TEXT NOT NULL DEFAULT ''")?;
+    add_column_if_missing(tx, "chat_logs", "conversation_id TEXT NOT NULL DEFAULT ''")?;
 
     tx.execute_batch(
         "
@@ -447,6 +414,29 @@ fn apply_v2_multi_user_schema(tx: &Transaction<'_>) -> Result<()> {
             ON indicator_values(owner_user_id, member_id, project_id, indicator_id, checkup_date);
         CREATE INDEX IF NOT EXISTS idx_chat_logs_owner_member_conversation_created
             ON chat_logs(owner_user_id, member_id, conversation_id, created_at DESC);
+        ",
+    )?;
+
+    Ok(())
+}
+
+fn apply_v3_member_scoped_project_schema(tx: &Transaction<'_>) -> Result<()> {
+    add_column_if_missing(
+        tx,
+        "checkup_projects",
+        "owner_user_id TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(tx, "checkup_projects", "member_id TEXT NOT NULL DEFAULT ''")?;
+
+    add_column_if_missing(tx, "indicators", "owner_user_id TEXT NOT NULL DEFAULT ''")?;
+    add_column_if_missing(tx, "indicators", "member_id TEXT NOT NULL DEFAULT ''")?;
+
+    tx.execute_batch(
+        "
+        CREATE INDEX IF NOT EXISTS idx_checkup_projects_owner_member_sort
+            ON checkup_projects(owner_user_id, member_id, is_active, sort_order, created_at);
+        CREATE INDEX IF NOT EXISTS idx_indicators_owner_member_project_sort
+            ON indicators(owner_user_id, member_id, project_id, sort_order, created_at);
         ",
     )?;
 
@@ -515,18 +505,26 @@ mod tests {
     }
 
     #[test]
-    fn initialize_schema_bootstraps_v2_tables_for_new_database() -> Result<()> {
+    fn initialize_schema_bootstraps_v3_tables_for_new_database() -> Result<()> {
         let mut conn = Connection::open_in_memory()?;
 
         initialize_schema(&mut conn)?;
 
-        assert_eq!(get_user_version(&conn)?, SCHEMA_VERSION_V2);
+        assert_eq!(get_user_version(&conn)?, SCHEMA_VERSION_V3);
         assert!(table_exists(&conn, "local_users")?);
         assert!(table_exists(&conn, "family_members")?);
         assert!(table_exists(&conn, "chat_conversations")?);
+        assert!(column_exists(&conn, "checkup_projects", "owner_user_id")?);
+        assert!(column_exists(&conn, "checkup_projects", "member_id")?);
+        assert!(column_exists(&conn, "indicators", "owner_user_id")?);
+        assert!(column_exists(&conn, "indicators", "member_id")?);
         assert!(column_exists(&conn, "checkup_records", "owner_user_id")?);
         assert!(column_exists(&conn, "checkup_records", "member_id")?);
-        assert!(column_exists(&conn, "checkup_records", "member_name_snapshot")?);
+        assert!(column_exists(
+            &conn,
+            "checkup_records",
+            "member_name_snapshot"
+        )?);
         assert!(column_exists(&conn, "chat_logs", "conversation_id")?);
         assert!(column_exists(&conn, "chat_logs", "owner_user_id")?);
         assert!(column_exists(&conn, "chat_logs", "member_id")?);
@@ -556,8 +554,10 @@ mod tests {
 
         initialize_schema(&mut conn)?;
 
-        assert_eq!(get_user_version(&conn)?, SCHEMA_VERSION_V2);
+        assert_eq!(get_user_version(&conn)?, SCHEMA_VERSION_V3);
         assert!(table_exists(&conn, "local_users")?);
+        assert!(column_exists(&conn, "checkup_projects", "owner_user_id")?);
+        assert!(column_exists(&conn, "indicators", "member_id")?);
         assert!(column_exists(&conn, "ocr_results", "owner_user_id")?);
         assert!(column_exists(&conn, "indicator_values", "member_id")?);
         assert!(column_exists(&conn, "chat_logs", "conversation_id")?);

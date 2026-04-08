@@ -24,43 +24,7 @@ function resolveOwnerUserId(authApi) {
   )
 }
 
-async function resolveTauriInvoke() {
-  try {
-    const tauriCore = await import('@tauri-apps/api/core')
-    return typeof tauriCore?.invoke === 'function' ? tauriCore.invoke : null
-  } catch {
-    return null
-  }
-}
-
-function isUnavailableLocalCommandError(error) {
-  const message = String(error?.message || '')
-  return (
-    message.includes('__TAURI_INTERNALS__')
-    || message.includes('window is not defined')
-    || message.includes('Cannot find module')
-    || message.includes('Cannot find package')
-  )
-}
-
 function createMemberRepository(client, authApi) {
-  async function invokeLocal(command, payload) {
-    const invoke = await resolveTauriInvoke()
-    if (!invoke) {
-      return { handled: false, result: null }
-    }
-
-    try {
-      const result = await invoke(command, payload)
-      return { handled: true, result }
-    } catch (error) {
-      if (isUnavailableLocalCommandError(error)) {
-        return { handled: false, result: null }
-      }
-      throw error
-    }
-  }
-
   async function fallbackRequest(method, path, body) {
     if (method === 'GET') {
       return client.get(path, {}, { requiresAuth: true, includeUserId: true })
@@ -84,62 +48,29 @@ function createMemberRepository(client, authApi) {
 
   return {
     async listMembers({ ownerUserId } = {}) {
-      const resolvedOwnerUserId = resolveOwnerIdFromInput(ownerUserId)
-      const localResult = await invokeLocal('list_family_members', {
-        ownerUserId: resolvedOwnerUserId,
-      })
-      if (localResult.handled) {
-        return localResult.result
-      }
+      resolveOwnerIdFromInput(ownerUserId)
       return fallbackRequest('GET', '/app-api/family-members')
     },
     async createMember({ ownerUserId, payload = {} } = {}) {
-      const resolvedOwnerUserId = resolveOwnerIdFromInput(ownerUserId)
-      const localResult = await invokeLocal('create_family_member', {
-        ownerUserId: resolvedOwnerUserId,
-        input: payload,
-      })
-      if (localResult.handled) {
-        return localResult.result
-      }
+      resolveOwnerIdFromInput(ownerUserId)
       return fallbackRequest('POST', '/app-api/family-members', payload)
     },
     async updateMember({ ownerUserId, memberId, payload = {} } = {}) {
-      const resolvedOwnerUserId = resolveOwnerIdFromInput(ownerUserId)
-      const localResult = await invokeLocal('update_family_member', {
-        ownerUserId: resolvedOwnerUserId,
-        memberId: String(memberId ?? ''),
-        input: payload,
-      })
-      if (localResult.handled) {
-        return localResult.result
-      }
+      resolveOwnerIdFromInput(ownerUserId)
       return fallbackRequest('PUT', `/app-api/family-members/${memberId}`, payload)
     },
     async deleteMember({ ownerUserId, memberId } = {}) {
-      const resolvedOwnerUserId = resolveOwnerIdFromInput(ownerUserId)
-      const localResult = await invokeLocal('delete_family_member', {
-        ownerUserId: resolvedOwnerUserId,
-        memberId: String(memberId ?? ''),
-      })
-      if (localResult.handled) {
-        return localResult.result
-      }
+      resolveOwnerIdFromInput(ownerUserId)
       return fallbackRequest('DELETE', `/app-api/family-members/${memberId}`)
     },
     async setDefaultMember({ ownerUserId, memberId } = {}) {
-      const resolvedOwnerUserId = resolveOwnerIdFromInput(ownerUserId)
-      const localResult = await invokeLocal('set_default_family_member', {
-        ownerUserId: resolvedOwnerUserId,
-        memberId: String(memberId ?? ''),
-      })
-      if (localResult.handled) {
-        return localResult.result
-      }
+      resolveOwnerIdFromInput(ownerUserId)
       return fallbackRequest('PUT', `/app-api/family-members/${memberId}/set-default`)
     },
   }
 }
+
+export { createMemberRepository }
 
 export function getAccountContextService() {
   if (!sharedAccountContextService) {

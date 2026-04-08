@@ -742,7 +742,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onActivated, computed } from 'vue'
+import { ref, reactive, onMounted, onActivated, computed, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
@@ -751,6 +751,8 @@ import { useRoute } from 'vue-router'
 import {
   AI_MODES,
   CUSTOM_MODE_GUIDE_STEPS,
+  getAuthApi,
+  resolveLocalMemberScope,
   resolveCustomModeProviderGuides,
   resolveUsageFeedback,
   useAccountContext,
@@ -760,6 +762,7 @@ import {
 
 // ===== 多提供商管理 (ISS-060~066) =====
 const route = useRoute()
+const authApi = getAuthApi()
 const activeTab = ref('ai')
 const {
   state: accountContextState,
@@ -793,6 +796,8 @@ const networkConfig = reactive({
 const ocrPrompt = ref('')
 const aiPrompt = ref('')
 const userCustomPrompt = ref('')
+
+const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
 
 // ===== 开发者模式（Prompt 保护）=====
 const isDeveloperMode = ref(false)
@@ -1077,7 +1082,10 @@ const loadPrompts = async () => {
   try {
     const ocrTpl = await invoke('get_config', { key: 'ocr_prompt_template' })
     const aiTpl = await invoke('get_config', { key: 'ai_analysis_prompt_template' })
-    const userTpl = await invoke('get_config', { key: 'user_custom_prompt_template' })
+    const scope = buildMemberScope()
+    const userTpl = scope
+      ? await invoke('get_config', { key: 'user_custom_prompt_template', scope })
+      : ''
     ocrPrompt.value = ocrTpl || DEFAULT_OCR_PROMPT
     aiPrompt.value = aiTpl || DEFAULT_AI_PROMPT
     userCustomPrompt.value = userTpl || DEFAULT_USER_CUSTOM_PROMPT
@@ -1098,8 +1106,17 @@ const saveNetworkConfig = async () => {
 const savePrompts = async () => {
   savingPrompt.value = true
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪，请先登录并选择成员')
+    }
+
     // 始终保存用户自定义 Prompt
-    await invoke('save_config', { key: 'user_custom_prompt_template', value: userCustomPrompt.value })
+    await invoke('save_config', {
+      key: 'user_custom_prompt_template',
+      value: userCustomPrompt.value,
+      scope,
+    })
     // 开发者模式下才保存核心 Prompt
     if (isDeveloperMode.value) {
       await invoke('save_config', { key: 'ocr_prompt_template', value: ocrPrompt.value })
@@ -1264,11 +1281,17 @@ const projectForm = reactive({
 
 const loadProjects = async () => {
   try {
-    const list = await invoke('list_projects')
+    const scope = buildMemberScope()
+    if (!scope) {
+      projects.value = []
+      return
+    }
+
+    const list = await invoke('list_projects', { scope })
     // 加载每个项目的指标数量
     for (const p of list) {
       try {
-        const inds = await invoke('list_indicators', { projectId: p.id })
+        const inds = await invoke('list_indicators', { projectId: p.id, scope })
         p.indicatorCount = inds.length
       } catch {
         p.indicatorCount = 0
@@ -1294,13 +1317,19 @@ const saveProject = async () => {
   }
   savingProject.value = true
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪，请先登录并选择成员')
+    }
+
     if (editingProject.value) {
       await invoke('update_project', {
         input: {
           id: editingProject.value.id,
           name: projectForm.name,
           description: projectForm.description,
-        }
+        },
+        scope,
       })
       ElMessage.success('项目更新成功')
     } else {
@@ -1308,7 +1337,8 @@ const saveProject = async () => {
         input: {
           name: projectForm.name,
           description: projectForm.description,
-        }
+        },
+        scope,
       })
       ElMessage.success('项目创建成功')
     }
@@ -1326,8 +1356,14 @@ const saveProject = async () => {
 
 const toggleProject = async (row) => {
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪，请先登录并选择成员')
+    }
+
     await invoke('update_project', {
-      input: { id: row.id, is_active: row.is_active }
+      input: { id: row.id, is_active: row.is_active },
+      scope,
     })
     ElMessage.success(row.is_active ? '已启用' : '已停用')
   } catch (e) {
@@ -1338,12 +1374,17 @@ const toggleProject = async (row) => {
 
 const handleDeleteProject = async (row) => {
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪，请先登录并选择成员')
+    }
+
     await ElMessageBox.confirm(`确定要删除检查项目「${row.name}」吗？`, '确认删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
-    await invoke('delete_project', { id: row.id })
+    await invoke('delete_project', { id: row.id, scope })
     ElMessage.success('项目已删除')
     await loadProjects()
   } catch (e) {
@@ -1375,7 +1416,12 @@ const openIndicators = async (project) => {
 const loadIndicators = async () => {
   if (!currentProject.value) return
   try {
-    indicators.value = await invoke('list_indicators', { projectId: currentProject.value.id })
+    const scope = buildMemberScope()
+    if (!scope) {
+      indicators.value = []
+      return
+    }
+    indicators.value = await invoke('list_indicators', { projectId: currentProject.value.id, scope })
   } catch (e) {
     ElMessage.error('加载指标失败: ' + e)
   }
@@ -1397,6 +1443,11 @@ const saveIndicator = async () => {
   }
   savingIndicator.value = true
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪，请先登录并选择成员')
+    }
+
     if (editingIndicator.value) {
       await invoke('update_indicator', {
         input: {
@@ -1405,7 +1456,8 @@ const saveIndicator = async () => {
           unit: indicatorForm.unit,
           reference_range: indicatorForm.reference_range,
           is_core: indicatorForm.is_core,
-        }
+        },
+        scope,
       })
       ElMessage.success('指标更新成功')
     } else {
@@ -1416,7 +1468,8 @@ const saveIndicator = async () => {
           unit: indicatorForm.unit,
           reference_range: indicatorForm.reference_range,
           is_core: indicatorForm.is_core,
-        }
+        },
+        scope,
       })
       ElMessage.success('指标创建成功')
     }
@@ -1434,12 +1487,17 @@ const saveIndicator = async () => {
 
 const handleDeleteIndicator = async (row) => {
   try {
+    const scope = buildMemberScope()
+    if (!scope) {
+      throw new Error('当前成员未就绪，请先登录并选择成员')
+    }
+
     await ElMessageBox.confirm(`确定要删除指标「${row.name}」吗？`, '确认删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
-    await invoke('delete_indicator', { id: row.id })
+    await invoke('delete_indicator', { id: row.id, scope })
     ElMessage.success('指标已删除')
     await loadIndicators()
     await loadProjects()
@@ -1584,4 +1642,22 @@ onActivated(() => {
     loadIndicators()
   }
 })
+
+watch(
+  () => accountContextState.currentMember?.memberId,
+  (nextMemberId, prevMemberId) => {
+    if (!nextMemberId || nextMemberId === prevMemberId) {
+      return
+    }
+
+    if (showIndicatorDrawer.value) {
+      showIndicatorDrawer.value = false
+      currentProject.value = null
+      indicators.value = []
+    }
+
+    void loadPrompts()
+    void loadProjects()
+  },
+)
 </script>

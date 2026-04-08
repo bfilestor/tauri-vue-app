@@ -1,4 +1,4 @@
-use super::scope::{resolve_member_scope, MemberScopeInput, ResolvedMemberScope};
+use super::scope::{MemberScopeInput, ResolvedMemberScope, resolve_member_scope};
 use crate::db::Database;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -61,21 +61,22 @@ fn list_records_with_conn(
                 offset_val
             ],
             |row| {
-            let record_id: String = row.get(0)?;
-            Ok((
-                record_id.clone(),
-                CheckupRecord {
-                    id: record_id,
-                    checkup_date: row.get(1)?,
-                    status: row.get(2)?,
-                    notes: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
-                    file_count: Some(row.get(6)?),
-                    project_names: None,
-                },
-            ))
-        })
+                let record_id: String = row.get(0)?;
+                Ok((
+                    record_id.clone(),
+                    CheckupRecord {
+                        id: record_id,
+                        checkup_date: row.get(1)?,
+                        status: row.get(2)?,
+                        notes: row.get(3)?,
+                        created_at: row.get(4)?,
+                        updated_at: row.get(5)?,
+                        file_count: Some(row.get(6)?),
+                        project_names: None,
+                    },
+                ))
+            },
+        )
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析失败: {}", e))?;
@@ -87,6 +88,8 @@ fn list_records_with_conn(
             .prepare(
                 "SELECT DISTINCT p.name FROM checkup_files f
                  JOIN checkup_projects p ON f.project_id = p.id
+                    AND p.owner_user_id = f.owner_user_id
+                    AND p.member_id = f.member_id
                  WHERE f.record_id = ?1 AND f.owner_user_id = ?2 AND f.member_id = ?3",
             )
             .map_err(|e| format!("查询项目名称失败: {}", e))?;
@@ -243,22 +246,22 @@ fn delete_record_with_conn(
         "DELETE FROM ocr_results WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
         rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
     )
-        .map_err(|e| format!("删除OCR结果失败: {}", e))?;
+    .map_err(|e| format!("删除OCR结果失败: {}", e))?;
     conn.execute(
         "DELETE FROM ai_analyses WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
         rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
     )
-        .map_err(|e| format!("删除AI分析失败: {}", e))?;
+    .map_err(|e| format!("删除AI分析失败: {}", e))?;
     conn.execute(
         "DELETE FROM checkup_files WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
         rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
     )
-        .map_err(|e| format!("删除文件记录失败: {}", e))?;
+    .map_err(|e| format!("删除文件记录失败: {}", e))?;
     conn.execute(
         "DELETE FROM checkup_records WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
         rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
     )
-        .map_err(|e| format!("删除检查记录失败: {}", e))?;
+    .map_err(|e| format!("删除检查记录失败: {}", e))?;
 
     Ok(true)
 }
@@ -326,13 +329,14 @@ fn get_history_timeline_with_conn(
                 offset_val
             ],
             |row| {
-            Ok((
-                row.get::<_, String>(0)?, // id
-                row.get::<_, String>(1)?, // date
-                row.get::<_, String>(2)?, // status
-                row.get::<_, String>(3)?, // notes
-            ))
-        })
+                Ok((
+                    row.get::<_, String>(0)?, // id
+                    row.get::<_, String>(1)?, // date
+                    row.get::<_, String>(2)?, // status
+                    row.get::<_, String>(3)?, // notes
+                ))
+            },
+        )
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析失败: {}", e))?;
@@ -346,7 +350,10 @@ fn get_history_timeline_with_conn(
             .prepare(
                 "SELECT o.parsed_items, p.name 
               FROM ocr_results o
-              LEFT JOIN checkup_projects p ON o.project_id = p.id
+              LEFT JOIN checkup_projects p
+                     ON o.project_id = p.id
+                    AND p.owner_user_id = o.owner_user_id
+                    AND p.member_id = o.member_id
               WHERE o.record_id = ?1
                 AND o.owner_user_id = ?2
                 AND o.member_id = ?3
@@ -358,11 +365,12 @@ fn get_history_timeline_with_conn(
             .query_map(
                 rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
                 |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1).unwrap_or_default(),
-                ))
-            })
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1).unwrap_or_default(),
+                    ))
+                },
+            )
             .map_err(|e| format!("查询OCR失败: {}", e))?;
 
         for row in ocr_rows {
@@ -384,8 +392,9 @@ fn get_history_timeline_with_conn(
         }
 
         // 3. 获取最新的 AI 分析结果
-        let ai_analysis: Option<String> = conn.query_row(
-            "SELECT response_content
+        let ai_analysis: Option<String> = conn
+            .query_row(
+                "SELECT response_content
              FROM ai_analyses
              WHERE record_id = ?1
                AND owner_user_id = ?2
@@ -393,9 +402,10 @@ fn get_history_timeline_with_conn(
                AND status = 'success'
              ORDER BY created_at DESC
              LIMIT 1",
-            rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
-            |row| row.get(0)
-        ).ok();
+                rusqlite::params![&id, &scope.owner_user_id, &scope.member_id],
+                |row| row.get(0),
+            )
+            .ok();
 
         result.push(HistoryTimelineItem {
             id,
@@ -454,6 +464,8 @@ fn get_record_with_conn(
         .prepare(
             "SELECT DISTINCT p.name FROM checkup_files f
              JOIN checkup_projects p ON f.project_id = p.id
+                AND p.owner_user_id = f.owner_user_id
+                AND p.member_id = f.member_id
              WHERE f.record_id = ?1 AND f.owner_user_id = ?2 AND f.member_id = ?3",
         )
         .map_err(|e| format!("查询失败: {}", e))?;
@@ -544,7 +556,11 @@ mod tests {
         fs::remove_dir_all(dir).ok();
     }
 
-    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+    fn member_scope(
+        owner_user_id: &str,
+        member_id: &str,
+        member_name: &str,
+    ) -> ResolvedMemberScope {
         ResolvedMemberScope {
             owner_user_id: owner_user_id.to_string(),
             member_id: member_id.to_string(),
@@ -552,17 +568,17 @@ mod tests {
         }
     }
 
-    fn seed_project(conn: &Connection) {
+    fn seed_project(conn: &Connection, owner_user_id: &str, member_id: &str) {
         conn.execute(
-            "INSERT INTO checkup_projects (id, name, description, sort_order, is_active, created_at, updated_at)
-             VALUES ('proj-blood', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
-            [],
+            "INSERT INTO checkup_projects (id, owner_user_id, member_id, name, description, sort_order, is_active, created_at, updated_at)
+             VALUES ('proj-blood', ?1, ?2, '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![owner_user_id, member_id],
         )
         .expect("project should seed");
         conn.execute(
-            "INSERT INTO indicators (id, project_id, name, unit, reference_range, sort_order, is_core, created_at)
-             VALUES ('ind-wbc', 'proj-blood', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
-            [],
+            "INSERT INTO indicators (id, project_id, owner_user_id, member_id, name, unit, reference_range, sort_order, is_core, created_at)
+             VALUES ('ind-wbc', 'proj-blood', ?1, ?2, '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![owner_user_id, member_id],
         )
         .expect("indicator should seed");
     }
@@ -631,7 +647,7 @@ mod tests {
         {
             let conn_guard = db.conn.lock().expect("lock should succeed");
             let conn = conn_guard.as_ref().expect("conn should exist");
-            seed_project(conn);
+            seed_project(conn, "user-1", "member-a");
             seed_member_record_bundle(
                 conn,
                 "user-1",
@@ -657,14 +673,22 @@ mod tests {
                 "成员B分析",
             );
 
-            let records = list_records_with_conn(conn, Some(20), Some(0), &member_scope("user-1", "member-a", "本人"))
-                .expect("member A records should load");
+            let records = list_records_with_conn(
+                conn,
+                Some(20),
+                Some(0),
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("member A records should load");
 
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].id, "record-a");
             assert_eq!(records[0].file_count, Some(1));
             assert_eq!(
-                records[0].project_names.as_ref().expect("project names should exist"),
+                records[0]
+                    .project_names
+                    .as_ref()
+                    .expect("project names should exist"),
                 &vec!["血常规".to_string()]
             );
         }
@@ -677,7 +701,7 @@ mod tests {
         {
             let conn_guard = db.conn.lock().expect("lock should succeed");
             let conn = conn_guard.as_ref().expect("conn should exist");
-            seed_project(conn);
+            seed_project(conn, "user-1", "member-a");
             seed_member_record_bundle(
                 conn,
                 "user-1",
@@ -727,7 +751,7 @@ mod tests {
         {
             let conn_guard = db.conn.lock().expect("lock should succeed");
             let conn = conn_guard.as_ref().expect("conn should exist");
-            seed_project(conn);
+            seed_project(conn, "user-1", "member-a");
             seed_member_record_bundle(
                 conn,
                 "user-1",
@@ -753,8 +777,12 @@ mod tests {
                 "成员B分析",
             );
 
-            delete_record_with_conn(conn, "record-a".to_string(), &member_scope("user-1", "member-a", "本人"))
-                .expect("member A record should delete");
+            delete_record_with_conn(
+                conn,
+                "record-a".to_string(),
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("member A record should delete");
 
             let remaining_member_a_records: i64 = conn
                 .query_row(

@@ -628,7 +628,14 @@ const fileCategoryOptions = computed(() => [
 
 const loadProjects = async () => {
   try {
-    const all = await invoke('list_projects')
+    const scope = buildMemberScope()
+    if (!scope) {
+      activeProjects.value = []
+      selectedProjectId.value = ''
+      return
+    }
+
+    const all = await invoke('list_projects', { scope })
     activeProjects.value = all.filter(p => p.is_active)
     if (!selectedFileCategoryId.value) {
       selectedFileCategoryId.value = ALL_CATEGORY_VALUE
@@ -1084,6 +1091,11 @@ const setAsIndicator = async (row, ocr) => {
   }
   
   try {
+    const scope = await ensureInteractiveMemberScope()
+    if (!scope) {
+      return
+    }
+
     const input = {
       project_id: ocr.project_id,
       name: row.name,
@@ -1092,7 +1104,7 @@ const setAsIndicator = async (row, ocr) => {
       is_core: true // Default to core indicator
     }
     
-    await invoke('ensure_indicator', { input })
+    await invoke('ensure_indicator', { input, scope })
     ElMessage.success(`指标「${row.name}」添加成功`)
   } catch (e) {
     // Check for "exists" message
@@ -1397,6 +1409,7 @@ watch(
     pendingUsageAction.value = null
     expandedId.value = ''
     currentFiles.value = []
+    void loadProjects()
     void loadRecords(true)
   }
 )

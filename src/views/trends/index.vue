@@ -205,7 +205,12 @@ const setChartRef = (id, el) => {
 
 const loadProjects = async () => {
   try {
-    const all = await invoke('list_projects')
+    const scope = buildMemberScope()
+    if (!scope) {
+      projects.value = []
+      return
+    }
+    const all = await invoke('list_projects', { scope })
     projects.value = all.filter(p => p.is_active)
   } catch (e) {
     console.error('加载项目失败:', e)

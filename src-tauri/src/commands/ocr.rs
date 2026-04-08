@@ -1,4 +1,4 @@
-use super::scope::{resolve_member_scope, MemberScopeInput, ResolvedMemberScope};
+use super::scope::{MemberScopeInput, ResolvedMemberScope, resolve_member_scope};
 use crate::db::Database;
 use crate::services::http_client;
 use rusqlite::Connection;
@@ -65,9 +65,7 @@ fn mask_sensitive_value(value: &str) -> String {
 
 fn sanitize_header_value(header_name: &str, header_value: &str) -> String {
     match header_name.to_ascii_lowercase().as_str() {
-        "authorization" | "x-api-key" | "proxy-authorization" => {
-            mask_sensitive_value(header_value)
-        }
+        "authorization" | "x-api-key" | "proxy-authorization" => mask_sensitive_value(header_value),
         _ => header_value.to_string(),
     }
 }
@@ -94,8 +92,7 @@ fn sanitize_image_url_in_value(value: &mut serde_json::Value) {
                 if let serde_json::Value::Object(image_url_obj) = image_url_val {
                     if let Some(url_val) = image_url_obj.get_mut("url") {
                         if let Some(url_str) = url_val.as_str() {
-                            *url_val =
-                                serde_json::Value::String(truncate_for_log(url_str, 100));
+                            *url_val = serde_json::Value::String(truncate_for_log(url_str, 100));
                         }
                     }
                 }
@@ -135,11 +132,18 @@ fn log_request_debug(
                 }
             }
             Err(e) => {
-                log::warn!("[{}] Failed to build request for header logging: {}", tag, e);
+                log::warn!(
+                    "[{}] Failed to build request for header logging: {}",
+                    tag,
+                    e
+                );
             }
         }
     } else {
-        log::warn!("[{}] RequestBuilder cannot be cloned for header logging", tag);
+        log::warn!(
+            "[{}] RequestBuilder cannot be cloned for header logging",
+            tag
+        );
     }
 }
 
@@ -191,16 +195,17 @@ pub async fn start_ocr(
             .query_map(
                 rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
                 |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6).unwrap_or_default(),
-                ))
-            })
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6).unwrap_or_default(),
+                    ))
+                },
+            )
             .map_err(|e| format!("查询文件失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("解析文件数据失败: {}", e))?;
@@ -218,21 +223,36 @@ pub async fn start_ocr(
 
         // 加载所有项目的指标映射（用于匹配 indicator_values）
         let mut ind_stmt = conn
-            .prepare("SELECT id, project_id, name FROM indicators")
+            .prepare(
+                "SELECT id, project_id, name
+                 FROM indicators
+                 WHERE owner_user_id = ?1 AND member_id = ?2",
+            )
             .map_err(|e| format!("查询指标失败: {}", e))?;
         let indicators: Vec<(String, String, String)> = ind_stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
+            .query_map(
+                rusqlite::params![&scope.owner_user_id, &scope.member_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
             .map_err(|e| format!("查询指标失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("解析指标数据失败: {}", e))?;
 
-        (files, checkup_date, config, model, ocr_prompt, indicators, scope)
+        (
+            files,
+            checkup_date,
+            config,
+            model,
+            ocr_prompt,
+            indicators,
+            scope,
+        )
     };
 
     // 更新状态为 ocr_processing
@@ -351,18 +371,9 @@ pub async fn start_ocr(
                 .header("Authorization", format!("Bearer {}", config.api_key))
                 .header("Content-Type", "application/json");
 
-            log_request_debug(
-                "start_ocr",
-                &request,
-                &config.api_url,
-                &request_body,
-            );
+            log_request_debug("start_ocr", &request, &config.api_url, &request_body);
 
-            let response = match request
-                .json(&request_body)
-                .send()
-                .await
-            {
+            let response = match request.json(&request_body).send().await {
                 Ok(r) => r,
                 Err(e) => {
                     let err_msg = format!("{}: 请求失败 - {}", filename, e);
@@ -459,7 +470,7 @@ pub async fn start_ocr(
                             SELECT id FROM ocr_results
                             WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4
                          )",
-                        rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id], 
+                        rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id],
                     );
                         let _: Result<usize, _> = conn.execute(
                             "DELETE FROM ocr_results
@@ -558,91 +569,97 @@ pub async fn retry_ocr(
     use tauri::Emitter;
 
     // 1. 查询必要信息
-    let (file_info, record_id, checkup_date, config, model, ocr_prompt, indicators_map, scope) =
-        {
-            let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-            let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-            let scope = resolve_member_scope(conn, scope)?;
+    let (file_info, record_id, checkup_date, config, model, ocr_prompt, indicators_map, scope) = {
+        let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+        let scope = resolve_member_scope(conn, scope)?;
 
-            // 查询 OCR 记录关联的信息
-            let (file_id, record_id, project_id) = conn
-                .query_row(
-                    "SELECT file_id, record_id, project_id
+        // 查询 OCR 记录关联的信息
+        let (file_id, record_id, project_id) = conn
+            .query_row(
+                "SELECT file_id, record_id, project_id
                      FROM ocr_results
                      WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
-                    rusqlite::params![&ocr_id, &scope.owner_user_id, &scope.member_id],
-                    |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, String>(2)?,
-                        ))
-                    },
-                )
-                .map_err(|e| format!("OCR记录不存在: {}", e))?;
+                rusqlite::params![&ocr_id, &scope.owner_user_id, &scope.member_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .map_err(|e| format!("OCR记录不存在: {}", e))?;
 
-            // 查询日期
-            let checkup_date: String = conn
-                .query_row(
-                    "SELECT checkup_date
+        // 查询日期
+        let checkup_date: String = conn
+            .query_row(
+                "SELECT checkup_date
                      FROM checkup_records
                      WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
-                    rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
-                    |row| row.get(0),
-                )
-                .unwrap_or_default();
+                rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
 
-            // 查询文件信息
-            let (filename, stored_path, mime_type, project_name) = conn
-                .query_row(
-                    "SELECT f.original_filename, f.stored_path, f.mime_type, p.name
+        // 查询文件信息
+        let (filename, stored_path, mime_type, project_name) = conn
+            .query_row(
+                "SELECT f.original_filename, f.stored_path, f.mime_type, p.name
              FROM checkup_files f
              LEFT JOIN checkup_projects p ON f.project_id = p.id
              WHERE f.id = ?1 AND f.owner_user_id = ?2 AND f.member_id = ?3",
-                    rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
-                    |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, String>(2)?,
-                            row.get::<_, String>(3).unwrap_or_default(),
-                        ))
-                    },
-                )
-                .map_err(|e| format!("文件不存在: {}", e))?;
-
-            let config = http_client::load_ai_config(&conn)?;
-            let model = http_client::get_default_model(&conn);
-            let ocr_prompt = load_ocr_prompt_template(conn);
-
-            // 加载指标映射
-            let mut ind_stmt = conn
-                .prepare("SELECT id, project_id, name FROM indicators")
-                .unwrap();
-            let indicators: Vec<(String, String, String)> = ind_stmt
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-                .unwrap()
-                .collect::<Result<Vec<_>, _>>()
-                .unwrap();
-
-            (
-                (
-                    file_id,
-                    project_id,
-                    filename,
-                    stored_path,
-                    mime_type,
-                    project_name,
-                ),
-                record_id,
-                checkup_date,
-                config,
-                model,
-                ocr_prompt,
-                indicators,
-                scope,
+                rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3).unwrap_or_default(),
+                    ))
+                },
             )
-        };
+            .map_err(|e| format!("文件不存在: {}", e))?;
+
+        let config = http_client::load_ai_config(&conn)?;
+        let model = http_client::get_default_model(&conn);
+        let ocr_prompt = load_ocr_prompt_template(conn);
+
+        // 加载指标映射
+        let mut ind_stmt = conn
+            .prepare(
+                "SELECT id, project_id, name
+                     FROM indicators
+                     WHERE owner_user_id = ?1 AND member_id = ?2",
+            )
+            .unwrap();
+        let indicators: Vec<(String, String, String)> = ind_stmt
+            .query_map(
+                rusqlite::params![&scope.owner_user_id, &scope.member_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        (
+            (
+                file_id,
+                project_id,
+                filename,
+                stored_path,
+                mime_type,
+                project_name,
+            ),
+            record_id,
+            checkup_date,
+            config,
+            model,
+            ocr_prompt,
+            indicators,
+            scope,
+        )
+    };
 
     let (file_id, project_id, filename, stored_path, mime_type, _project_name) = file_info;
     let new_ocr_id = uuid::Uuid::new_v4().to_string(); // 使用新 ID
@@ -673,18 +690,28 @@ pub async fn retry_ocr(
                 // 清理该文件的旧 OCR 记录 (只保留当前新创建的)
                 // 1. 删除旧记录关联的指标值
                 let _: Result<usize, _> = conn.execute(
-                 "DELETE FROM indicator_values
+                    "DELETE FROM indicator_values
                   WHERE ocr_result_id IN (
                     SELECT id FROM ocr_results
                     WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4
                   )",
-                 rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id_clone], 
-             );
+                    rusqlite::params![
+                        &file_id,
+                        &scope.owner_user_id,
+                        &scope.member_id,
+                        &ocr_id_clone
+                    ],
+                );
                 // 2. 删除旧 OCR 记录
                 let _: Result<usize, _> = conn.execute(
                     "DELETE FROM ocr_results
                      WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4",
-                    rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id, &ocr_id_clone],
+                    rusqlite::params![
+                        &file_id,
+                        &scope.owner_user_id,
+                        &scope.member_id,
+                        &ocr_id_clone
+                    ],
                 );
             }
         }
@@ -742,18 +769,9 @@ pub async fn retry_ocr(
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json");
 
-        log_request_debug(
-            "retry_ocr",
-            &request,
-            &config.api_url,
-            &request_body,
-        );
+        log_request_debug("retry_ocr", &request, &config.api_url, &request_body);
 
-        let response = match request
-            .json(&request_body)
-            .send()
-            .await
-        {
+        let response = match request.json(&request_body).send().await {
             Ok(r) => r,
             Err(e) => {
                 update_ocr_failed(&app, &ocr_id_clone, &format!("请求失败: {}", e));
@@ -894,13 +912,13 @@ fn save_ocr_error(
 
                 // 清理旧记录
                 let _: Result<usize, _> = conn.execute(
-                "DELETE FROM indicator_values
+                    "DELETE FROM indicator_values
                  WHERE ocr_result_id IN (
                     SELECT id FROM ocr_results
                     WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4
                  )",
-                rusqlite::params![file_id, owner_user_id, member_id, &ocr_id], 
-            );
+                    rusqlite::params![file_id, owner_user_id, member_id, &ocr_id],
+                );
                 let _: Result<usize, _> = conn.execute(
                     "DELETE FROM ocr_results
                      WHERE file_id = ?1 AND owner_user_id = ?2 AND member_id = ?3 AND id != ?4",
@@ -920,13 +938,15 @@ fn update_ocr_item_with_conn(
     scope: &ResolvedMemberScope,
 ) -> Result<(), String> {
     // 1. 获取当前数据
-    let (parsed_items_str, project_id, record_id, checkup_date): (String, String, String, String) = conn.query_row(
-        "SELECT parsed_items, project_id, record_id, checkup_date
+    let (parsed_items_str, project_id, record_id, checkup_date): (String, String, String, String) =
+        conn.query_row(
+            "SELECT parsed_items, project_id, record_id, checkup_date
          FROM ocr_results
          WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
-        rusqlite::params![&ocr_id, &scope.owner_user_id, &scope.member_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-    ).map_err(|e| format!("OCR记录不存在: {}", e))?;
+            rusqlite::params![&ocr_id, &scope.owner_user_id, &scope.member_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(|e| format!("OCR记录不存在: {}", e))?;
 
     let mut parsed_items: Vec<OcrParsedItem> =
         serde_json::from_str(&parsed_items_str).map_err(|e| format!("解析JSON失败: {}", e))?;
@@ -950,10 +970,17 @@ fn update_ocr_item_with_conn(
     // 4. 重新生成 indicator_values
     // 加载指标映射
     let mut ind_stmt = conn
-        .prepare("SELECT id, project_id, name FROM indicators")
+        .prepare(
+            "SELECT id, project_id, name
+             FROM indicators
+             WHERE owner_user_id = ?1 AND member_id = ?2",
+        )
         .unwrap();
     let indicators_map: Vec<(String, String, String)> = ind_stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .query_map(
+            rusqlite::params![&scope.owner_user_id, &scope.member_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -1099,19 +1126,20 @@ fn get_ocr_results_with_conn(
         .query_map(
             rusqlite::params![&record_id, &scope.owner_user_id, &scope.member_id],
             |row| {
-            Ok(OcrResult {
-                id: row.get(0)?,
-                file_id: row.get(1)?,
-                record_id: row.get(2)?,
-                project_id: row.get(3)?,
-                checkup_date: row.get(4)?,
-                raw_json: row.get(5)?,
-                parsed_items: row.get(6)?,
-                status: row.get(7)?,
-                error_message: row.get(8)?,
-                created_at: row.get(9)?,
-            })
-        })
+                Ok(OcrResult {
+                    id: row.get(0)?,
+                    file_id: row.get(1)?,
+                    record_id: row.get(2)?,
+                    project_id: row.get(3)?,
+                    checkup_date: row.get(4)?,
+                    raw_json: row.get(5)?,
+                    parsed_items: row.get(6)?,
+                    status: row.get(7)?,
+                    error_message: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            },
+        )
         .map_err(|e| format!("查询失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析数据失败: {}", e))?;
@@ -1395,7 +1423,11 @@ mod tests {
         fs::remove_dir_all(dir).ok();
     }
 
-    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+    fn member_scope(
+        owner_user_id: &str,
+        member_id: &str,
+        member_name: &str,
+    ) -> ResolvedMemberScope {
         ResolvedMemberScope {
             owner_user_id: owner_user_id.to_string(),
             member_id: member_id.to_string(),
@@ -1405,14 +1437,16 @@ mod tests {
 
     fn seed_base_schema(conn: &Connection) {
         conn.execute(
-            "INSERT INTO checkup_projects (id, name, description, sort_order, is_active, created_at, updated_at)
-             VALUES ('proj-blood', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            "INSERT INTO checkup_projects (
+                id, owner_user_id, member_id, name, description, sort_order, is_active, created_at, updated_at
+             ) VALUES ('proj-blood', 'user-1', 'member-a', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
             [],
         )
         .expect("project should seed");
         conn.execute(
-            "INSERT INTO indicators (id, project_id, name, unit, reference_range, sort_order, is_core, created_at)
-             VALUES ('ind-wbc', 'proj-blood', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
+            "INSERT INTO indicators (
+                id, project_id, owner_user_id, member_id, name, unit, reference_range, sort_order, is_core, created_at
+             ) VALUES ('ind-wbc', 'proj-blood', 'user-1', 'member-a', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
             [],
         )
         .expect("indicator should seed");
@@ -1459,24 +1493,10 @@ mod tests {
             let conn = conn_guard.as_ref().expect("conn should exist");
             seed_base_schema(conn);
             seed_member_bundle(
-                conn,
-                "user-1",
-                "member-a",
-                "record-a",
-                "file-a",
-                "ocr-a",
-                "[]",
-                "success",
+                conn, "user-1", "member-a", "record-a", "file-a", "ocr-a", "[]", "success",
             );
             seed_member_bundle(
-                conn,
-                "user-1",
-                "member-b",
-                "record-b",
-                "file-b",
-                "ocr-b",
-                "[]",
-                "failed",
+                conn, "user-1", "member-b", "record-b", "file-b", "ocr-b", "[]", "failed",
             );
 
             let status = get_ocr_status_with_conn(

@@ -1,4 +1,4 @@
-use super::scope::{resolve_member_scope, MemberScopeInput, ResolvedMemberScope};
+use super::scope::{MemberScopeInput, ResolvedMemberScope, resolve_member_scope};
 use crate::db::Database;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -36,8 +36,10 @@ fn get_project_trends_with_conn(
     // 获取项目名称
     let project_name: String = conn
         .query_row(
-            "SELECT name FROM checkup_projects WHERE id = ?1",
-            [&project_id],
+            "SELECT name
+             FROM checkup_projects
+             WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&project_id, &scope.owner_user_id, &scope.member_id],
             |row| row.get(0),
         )
         .map_err(|e| format!("项目不存在: {}", e))?;
@@ -46,20 +48,23 @@ fn get_project_trends_with_conn(
     let mut ind_stmt = conn
         .prepare(
             "SELECT id, name, unit, reference_range FROM indicators
-             WHERE project_id = ?1
+             WHERE project_id = ?1 AND owner_user_id = ?2 AND member_id = ?3
              ORDER BY is_core DESC, sort_order ASC, name ASC",
         )
         .map_err(|e| format!("查询指标失败: {}", e))?;
 
     let indicators: Vec<(String, String, String, String)> = ind_stmt
-        .query_map([&project_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2).unwrap_or_default(),
-                row.get::<_, String>(3).unwrap_or_default(),
-            ))
-        })
+        .query_map(
+            rusqlite::params![&project_id, &scope.owner_user_id, &scope.member_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2).unwrap_or_default(),
+                    row.get::<_, String>(3).unwrap_or_default(),
+                ))
+            },
+        )
         .map_err(|e| format!("查询指标失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析指标数据失败: {}", e))?;
@@ -84,13 +89,14 @@ fn get_project_trends_with_conn(
             .query_map(
                 rusqlite::params![ind_id, project_id, &scope.owner_user_id, &scope.member_id],
                 |row| {
-                Ok(TrendDataPoint {
-                    checkup_date: row.get(0)?,
-                    value: row.get(1)?,
-                    value_text: row.get::<_, String>(2).unwrap_or_default(),
-                    is_abnormal: row.get::<_, i32>(3).unwrap_or(0) != 0,
-                })
-            })
+                    Ok(TrendDataPoint {
+                        checkup_date: row.get(0)?,
+                        value: row.get(1)?,
+                        value_text: row.get::<_, String>(2).unwrap_or_default(),
+                        is_abnormal: row.get::<_, i32>(3).unwrap_or(0) != 0,
+                    })
+                },
+            )
             .map_err(|e| format!("查询失败: {}", e))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("解析数据失败: {}", e))?;
@@ -137,14 +143,18 @@ pub fn get_all_trends(
     // 获取所有活跃项目
     let mut proj_stmt = conn
         .prepare(
-            "SELECT id, name FROM checkup_projects WHERE is_active = 1 ORDER BY sort_order ASC",
+            "SELECT id, name
+             FROM checkup_projects
+             WHERE is_active = 1 AND owner_user_id = ?1 AND member_id = ?2
+             ORDER BY sort_order ASC",
         )
         .map_err(|e| format!("查询项目失败: {}", e))?;
 
     let projects: Vec<(String, String)> = proj_stmt
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
+        .query_map(
+            rusqlite::params![&scope.owner_user_id, &scope.member_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
         .map_err(|e| format!("查询项目失败: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("解析项目数据失败: {}", e))?;
@@ -193,7 +203,11 @@ mod tests {
         fs::remove_dir_all(dir).ok();
     }
 
-    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+    fn member_scope(
+        owner_user_id: &str,
+        member_id: &str,
+        member_name: &str,
+    ) -> ResolvedMemberScope {
         ResolvedMemberScope {
             owner_user_id: owner_user_id.to_string(),
             member_id: member_id.to_string(),
@@ -209,14 +223,16 @@ mod tests {
             let conn = conn_guard.as_ref().expect("conn should exist");
 
             conn.execute(
-                "INSERT INTO checkup_projects (id, name, description, sort_order, is_active, created_at, updated_at)
-                 VALUES ('proj-blood', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+                "INSERT INTO checkup_projects (
+                    id, owner_user_id, member_id, name, description, sort_order, is_active, created_at, updated_at
+                 ) VALUES ('proj-blood', 'user-1', 'member-a', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
                 [],
             )
             .expect("project should seed");
             conn.execute(
-                "INSERT INTO indicators (id, project_id, name, unit, reference_range, sort_order, is_core, created_at)
-                 VALUES ('ind-wbc', 'proj-blood', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
+                "INSERT INTO indicators (
+                    id, project_id, owner_user_id, member_id, name, unit, reference_range, sort_order, is_core, created_at
+                 ) VALUES ('ind-wbc', 'proj-blood', 'user-1', 'member-a', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
                 [],
             )
             .expect("indicator should seed");
@@ -272,9 +288,20 @@ mod tests {
             assert_eq!(trend.indicators.len(), 1);
             assert_eq!(trend.indicators[0].indicator_id, "ind-wbc");
             assert_eq!(trend.indicators[0].data_points.len(), 2);
-            assert_eq!(trend.indicators[0].data_points[0].checkup_date, "2026-04-01");
-            assert_eq!(trend.indicators[0].data_points[1].checkup_date, "2026-04-08");
-            assert!(trend.indicators[0].data_points.iter().all(|point| point.value_text != "15.0"));
+            assert_eq!(
+                trend.indicators[0].data_points[0].checkup_date,
+                "2026-04-01"
+            );
+            assert_eq!(
+                trend.indicators[0].data_points[1].checkup_date,
+                "2026-04-08"
+            );
+            assert!(
+                trend.indicators[0]
+                    .data_points
+                    .iter()
+                    .all(|point| point.value_text != "15.0")
+            );
         }
         cleanup_test_database(&db, dir);
     }
