@@ -46,5 +46,9 @@
 | E3-S1-I2 | 自定义模式说明页与第三方平台注册引导 | Test Passed | E3-S1-I1 | `npm test`、`npm run build` 通过 | 已新增自定义模式说明抽屉、平台接入步骤与可配置外链占位，未配置链接时明确提示“暂未配置” |
 | E3-S2-I1 | AI 问答入口的通用模式预检与购买拦截 | Test Passed | E2-S2-I2, E3-S1-I1 | `npm test`、`npm run build` 通过 | 已接入通用模式发送前 `usage/precheck`，余额不足自动拉起购买弹窗并在支付成功后自动续发原问题；自定义模式保持原 `chat_with_ai` 流程 |
 | E3-S2-I2 | OCR 与 AI 分析入口复用同一预检/拦截器 | Test Passed | E3-S2-I1 | `npm test`、`npm run build` 通过 | 上传页 OCR/AI 分析前已接入通用模式预检，余额不足自动拉起购买并在支付成功后自动重试原操作；自定义模式不受影响 |
+| E4-S1-I1 | 首登自动创建本人成员与业务准入控制 | Todo | E1-S1-I2, E2-S1-I1 | 待补 | V2 强制登录后初始化成员；无成员时自动创建 `SELF` 默认成员 |
+| E4-S1-I2 | 家庭成员管理页与跨页面成员切换 | Todo | E4-S1-I1 | 待补 | 用正式成员切换替换当前“仅默认成员阻塞”的临时方案 |
+| E4-S2-I1 | 本地数据库 schema 迁移与成员过滤基础层 | Todo | E4-S1-I1 | 待补 | 重点改造 `src-tauri/src/db.rs` 与各命令 SQL，补齐 `owner_user_id + member_id` 隔离，并为 `chat_logs` 增加 `conversation_id`；本期不做旧数据自动迁移 |
+| E4-S2-I2 | 报告、OCR、分析、趋势与 AI 对话成员级隔离 | Todo | E4-S1-I2, E4-S2-I1, E3-S2-I2 | 待补 | 保证不同家庭成员的资料、分析结果和聊天上下文完全独立 |
 
 
