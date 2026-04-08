@@ -1,7 +1,9 @@
 use super::AppDir;
-use super::scope::{resolve_member_scope, MemberScopeInput};
+use super::scope::{resolve_member_scope, MemberScopeInput, ResolvedMemberScope};
 use crate::db::Database;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -28,16 +30,12 @@ pub struct UploadFileInput {
 }
 
 /// 批量上传文件
-#[tauri::command]
-pub fn upload_files(
+fn upload_files_with_conn(
+    conn: &Connection,
     files: Vec<UploadFileInput>,
-    scope: Option<MemberScopeInput>,
-    db: State<Database>,
-    app_dir: State<AppDir>,
+    scope: &ResolvedMemberScope,
+    app_dir: &Path,
 ) -> Result<Vec<CheckupFile>, String> {
-    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    let scope = resolve_member_scope(conn, scope)?;
     let now = chrono::Local::now().to_rfc3339();
     let mut result = Vec::new();
 
@@ -76,7 +74,6 @@ pub fn upload_files(
 
         // 构建存储路径: pictures/<项目名>/<日期>/<文件名>
         let store_dir = app_dir
-            .0
             .join("pictures")
             .join(&project_name)
             .join(&file_input.checkup_date);
@@ -100,7 +97,7 @@ pub fn upload_files(
 
         // 获取相对路径
         let relative_path = stored_path
-            .strip_prefix(&app_dir.0)
+            .strip_prefix(app_dir)
             .unwrap_or(&stored_path)
             .to_string_lossy()
             .to_string();
@@ -153,16 +150,26 @@ pub fn upload_files(
     Ok(result)
 }
 
-/// 获取某次检查记录的所有文件
+/// 批量上传文件
 #[tauri::command]
-pub fn list_files(
-    record_id: String,
+pub fn upload_files(
+    files: Vec<UploadFileInput>,
     scope: Option<MemberScopeInput>,
     db: State<Database>,
+    app_dir: State<AppDir>,
 ) -> Result<Vec<CheckupFile>, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let scope = resolve_member_scope(conn, scope)?;
+    upload_files_with_conn(conn, files, &scope, &app_dir.0)
+}
+
+/// 获取某次检查记录的所有文件
+fn list_files_with_conn(
+    conn: &Connection,
+    record_id: String,
+    scope: &ResolvedMemberScope,
+) -> Result<Vec<CheckupFile>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT f.id, f.record_id, f.project_id, p.name, f.original_filename, f.stored_path, f.file_size, f.mime_type, f.uploaded_at
@@ -196,6 +203,43 @@ pub fn list_files(
     Ok(files)
 }
 
+/// 获取某次检查记录的所有文件
+#[tauri::command]
+pub fn list_files(
+    record_id: String,
+    scope: Option<MemberScopeInput>,
+    db: State<Database>,
+) -> Result<Vec<CheckupFile>, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
+    list_files_with_conn(conn, record_id, &scope)
+}
+
+/// 读取文件内容（Base64），用于前端预览
+fn read_file_base64_with_conn(
+    conn: &Connection,
+    file_id: String,
+    scope: &ResolvedMemberScope,
+    app_dir: &Path,
+) -> Result<String, String> {
+    let (stored_path, mime_type): (String, String) = conn
+        .query_row(
+            "SELECT stored_path, mime_type
+             FROM checkup_files
+             WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
+            rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("文件不存在: {}", e))?;
+
+    let full_path = app_dir.join(&stored_path);
+    let bytes = std::fs::read(&full_path).map_err(|e| format!("读取文件失败: {}", e))?;
+
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+    Ok(format!("data:{};base64,{}", mime_type, b64))
+}
+
 /// 读取文件内容（Base64），用于前端预览
 #[tauri::command]
 pub fn read_file_base64(
@@ -207,36 +251,16 @@ pub fn read_file_base64(
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let scope = resolve_member_scope(conn, scope)?;
-
-    let (stored_path, mime_type): (String, String) = conn
-        .query_row(
-            "SELECT stored_path, mime_type
-             FROM checkup_files
-             WHERE id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
-            rusqlite::params![&file_id, &scope.owner_user_id, &scope.member_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| format!("文件不存在: {}", e))?;
-
-    let full_path = app_dir.0.join(&stored_path);
-    let bytes = std::fs::read(&full_path).map_err(|e| format!("读取文件失败: {}", e))?;
-
-    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
-    Ok(format!("data:{};base64,{}", mime_type, b64))
+    read_file_base64_with_conn(conn, file_id, &scope, &app_dir.0)
 }
 
 /// 删除文件
-#[tauri::command]
-pub fn delete_file(
+fn delete_file_with_conn(
+    conn: &Connection,
     file_id: String,
-    scope: Option<MemberScopeInput>,
-    db: State<Database>,
-    app_dir: State<AppDir>,
+    scope: &ResolvedMemberScope,
+    app_dir: &Path,
 ) -> Result<bool, String> {
-    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    let scope = resolve_member_scope(conn, scope)?;
-
     let stored_path: String = conn
         .query_row(
             "SELECT stored_path
@@ -270,10 +294,24 @@ pub fn delete_file(
         .map_err(|e| format!("删除文件记录失败: {}", e))?;
 
     // 删除物理文件
-    let full_path = app_dir.0.join(&stored_path);
+    let full_path = app_dir.join(&stored_path);
     std::fs::remove_file(&full_path).ok();
 
     Ok(true)
+}
+
+/// 删除文件
+#[tauri::command]
+pub fn delete_file(
+    file_id: String,
+    scope: Option<MemberScopeInput>,
+    db: State<Database>,
+    app_dir: State<AppDir>,
+) -> Result<bool, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
+    delete_file_with_conn(conn, file_id, &scope, &app_dir.0)
 }
 
 /// 根据文件扩展名推断 MIME 类型
@@ -300,4 +338,222 @@ pub fn read_temp_file(
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
     let mime = guess_mime_type(&path);
     Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn create_test_database(name: &str) -> (Database, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "health-monitor-file-tests-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ));
+        let db = Database::new(dir.clone()).expect("database should initialize");
+        (db, dir)
+    }
+
+    fn cleanup_test_database(db: &Database, dir: PathBuf) {
+        db.close().ok();
+        fs::remove_dir_all(dir).ok();
+    }
+
+    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+        ResolvedMemberScope {
+            owner_user_id: owner_user_id.to_string(),
+            member_id: member_id.to_string(),
+            member_name: member_name.to_string(),
+        }
+    }
+
+    fn seed_project(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO checkup_projects (id, name, description, sort_order, is_active, created_at, updated_at)
+             VALUES ('proj-blood', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            [],
+        )
+        .expect("project should seed");
+    }
+
+    fn seed_record(conn: &Connection, owner_user_id: &str, member_id: &str, record_id: &str) {
+        conn.execute(
+            "INSERT INTO checkup_records (
+                id, owner_user_id, member_id, member_name_snapshot, checkup_date, status, notes, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, '成员', '2026-04-08', 'pending_upload', '', '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![record_id, owner_user_id, member_id],
+        )
+        .expect("record should seed");
+    }
+
+    fn seed_file(conn: &Connection, owner_user_id: &str, member_id: &str, record_id: &str, file_id: &str, stored_path: &str) {
+        conn.execute(
+            "INSERT INTO checkup_files (
+                id, owner_user_id, member_id, record_id, project_id, original_filename, stored_path, file_size, mime_type, uploaded_at
+             ) VALUES (?1, ?2, ?3, ?4, 'proj-blood', 'report.png', ?5, 3, 'image/png', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![file_id, owner_user_id, member_id, record_id, stored_path],
+        )
+        .expect("file should seed");
+    }
+
+    #[test]
+    fn upload_and_list_files_only_operate_inside_current_member_scope() {
+        let (db, dir) = create_test_database("upload-list");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+            seed_project(conn);
+            seed_record(conn, "user-1", "member-a", "record-a");
+            seed_record(conn, "user-1", "member-b", "record-b");
+
+            let uploaded = upload_files_with_conn(
+                conn,
+                vec![UploadFileInput {
+                    record_id: "record-a".to_string(),
+                    project_id: "proj-blood".to_string(),
+                    checkup_date: "2026-04-08".to_string(),
+                    file_data: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"abc"),
+                    filename: "report.png".to_string(),
+                }],
+                &member_scope("user-1", "member-a", "本人"),
+                &dir,
+            )
+            .expect("upload should succeed");
+
+            assert_eq!(uploaded.len(), 1);
+
+            let files_a = list_files_with_conn(
+                conn,
+                "record-a".to_string(),
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("member A files should load");
+            let files_b = list_files_with_conn(
+                conn,
+                "record-a".to_string(),
+                &member_scope("user-1", "member-b", "母亲"),
+            )
+            .expect("member B files should load");
+
+            assert_eq!(files_a.len(), 1);
+            assert_eq!(files_b.len(), 0);
+            assert!(dir.join(&files_a[0].stored_path).exists());
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn read_file_base64_rejects_cross_member_access() {
+        let (db, dir) = create_test_database("read-file");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+            seed_project(conn);
+            seed_record(conn, "user-1", "member-a", "record-a");
+            let relative_path = "pictures/血常规/2026-04-08/file-a.png";
+            let full_path = dir.join(relative_path);
+            fs::create_dir_all(full_path.parent().expect("parent should exist")).expect("directory should exist");
+            fs::write(&full_path, b"abc").expect("file should write");
+            seed_file(conn, "user-1", "member-a", "record-a", "file-a", relative_path);
+
+            let preview = read_file_base64_with_conn(
+                conn,
+                "file-a".to_string(),
+                &member_scope("user-1", "member-a", "本人"),
+                &dir,
+            )
+            .expect("owner should read file");
+            let denied = read_file_base64_with_conn(
+                conn,
+                "file-a".to_string(),
+                &member_scope("user-1", "member-b", "母亲"),
+                &dir,
+            );
+
+            assert!(preview.starts_with("data:image/png;base64,"));
+            assert!(denied.is_err());
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn delete_file_only_removes_current_member_file_and_ocr_chain() {
+        let (db, dir) = create_test_database("delete-file");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+            seed_project(conn);
+            conn.execute(
+                "INSERT INTO indicators (id, project_id, name, unit, reference_range, sort_order, is_core, created_at)
+                 VALUES ('ind-wbc', 'proj-blood', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("indicator should seed");
+            seed_record(conn, "user-1", "member-a", "record-a");
+            seed_record(conn, "user-1", "member-b", "record-b");
+
+            let relative_a = "pictures/血常规/2026-04-08/file-a.png";
+            let relative_b = "pictures/血常规/2026-04-08/file-b.png";
+            for relative in [relative_a, relative_b] {
+                let path = dir.join(relative);
+                fs::create_dir_all(path.parent().expect("parent should exist")).expect("directory should exist");
+                fs::write(path, b"abc").expect("file should write");
+            }
+
+            seed_file(conn, "user-1", "member-a", "record-a", "file-a", relative_a);
+            seed_file(conn, "user-1", "member-b", "record-b", "file-b", relative_b);
+            conn.execute(
+                "INSERT INTO ocr_results (
+                    id, file_id, record_id, project_id, owner_user_id, member_id, checkup_date, raw_json, parsed_items, status, error_message, created_at
+                 ) VALUES
+                    ('ocr-a', 'file-a', 'record-a', 'proj-blood', 'user-1', 'member-a', '2026-04-08', '{}', '[]', 'success', '', '2026-04-08T00:00:00+08:00'),
+                    ('ocr-b', 'file-b', 'record-b', 'proj-blood', 'user-1', 'member-b', '2026-04-08', '{}', '[]', 'success', '', '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("ocr should seed");
+            conn.execute(
+                "INSERT INTO indicator_values (
+                    id, ocr_result_id, record_id, project_id, indicator_id, owner_user_id, member_id, checkup_date, value, value_text, is_abnormal, created_at
+                 ) VALUES
+                    ('iv-a', 'ocr-a', 'record-a', 'proj-blood', 'ind-wbc', 'user-1', 'member-a', '2026-04-08', 11.2, '11.2', 1, '2026-04-08T00:00:00+08:00'),
+                    ('iv-b', 'ocr-b', 'record-b', 'proj-blood', 'ind-wbc', 'user-1', 'member-b', '2026-04-08', 15.0, '15.0', 1, '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("indicator values should seed");
+
+            delete_file_with_conn(
+                conn,
+                "file-a".to_string(),
+                &member_scope("user-1", "member-a", "本人"),
+                &dir,
+            )
+            .expect("delete should succeed");
+
+            let remaining_member_a_files: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM checkup_files WHERE owner_user_id = 'user-1' AND member_id = 'member-a'",
+                [],
+                |row| row.get(0),
+            ).expect("count should work");
+            let remaining_member_b_files: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM checkup_files WHERE owner_user_id = 'user-1' AND member_id = 'member-b'",
+                [],
+                |row| row.get(0),
+            ).expect("count should work");
+            let remaining_member_b_ocr: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM ocr_results WHERE owner_user_id = 'user-1' AND member_id = 'member-b'",
+                [],
+                |row| row.get(0),
+            ).expect("count should work");
+
+            assert_eq!(remaining_member_a_files, 0);
+            assert_eq!(remaining_member_b_files, 1);
+            assert_eq!(remaining_member_b_ocr, 1);
+            assert!(!dir.join(relative_a).exists());
+            assert!(dir.join(relative_b).exists());
+        }
+        cleanup_test_database(&db, dir);
+    }
 }

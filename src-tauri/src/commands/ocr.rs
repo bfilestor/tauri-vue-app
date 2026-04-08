@@ -1,6 +1,7 @@
-use super::scope::{resolve_member_scope, MemberScopeInput};
+use super::scope::{resolve_member_scope, MemberScopeInput, ResolvedMemberScope};
 use crate::db::Database;
 use crate::services::http_client;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
@@ -911,18 +912,13 @@ fn save_ocr_error(
 }
 
 /// 更新单个 OCR 指标项
-#[tauri::command]
-pub fn update_ocr_item(
+fn update_ocr_item_with_conn(
+    conn: &Connection,
     ocr_id: String,
     index: usize,
     item: OcrParsedItem,
-    scope: Option<MemberScopeInput>,
-    db: tauri::State<Database>,
+    scope: &ResolvedMemberScope,
 ) -> Result<(), String> {
-    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
-    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-    let scope = resolve_member_scope(conn, scope)?;
-
     // 1. 获取当前数据
     let (parsed_items_str, project_id, record_id, checkup_date): (String, String, String, String) = conn.query_row(
         "SELECT parsed_items, project_id, record_id, checkup_date
@@ -1002,17 +998,27 @@ pub fn update_ocr_item(
     Ok(())
 }
 
-/// 查询 OCR 状态
+/// 更新单个 OCR 指标项
 #[tauri::command]
-pub fn get_ocr_status(
-    record_id: String,
+pub fn update_ocr_item(
+    ocr_id: String,
+    index: usize,
+    item: OcrParsedItem,
     scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
-) -> Result<serde_json::Value, String> {
+) -> Result<(), String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let scope = resolve_member_scope(conn, scope)?;
+    update_ocr_item_with_conn(conn, ocr_id, index, item, &scope)
+}
 
+/// 查询 OCR 状态
+fn get_ocr_status_with_conn(
+    conn: &Connection,
+    record_id: String,
+    scope: &ResolvedMemberScope,
+) -> Result<serde_json::Value, String> {
     let total_files: i32 = conn
         .query_row(
             "SELECT COUNT(*) FROM checkup_files WHERE record_id = ?1 AND owner_user_id = ?2 AND member_id = ?3",
@@ -1062,17 +1068,25 @@ pub fn get_ocr_status(
     }))
 }
 
-/// 获取 OCR 结果
+/// 查询 OCR 状态
 #[tauri::command]
-pub fn get_ocr_results(
+pub fn get_ocr_status(
     record_id: String,
     scope: Option<MemberScopeInput>,
     db: tauri::State<Database>,
-) -> Result<Vec<OcrResult>, String> {
+) -> Result<serde_json::Value, String> {
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
     let scope = resolve_member_scope(conn, scope)?;
+    get_ocr_status_with_conn(conn, record_id, &scope)
+}
 
+/// 获取 OCR 结果
+fn get_ocr_results_with_conn(
+    conn: &Connection,
+    record_id: String,
+    scope: &ResolvedMemberScope,
+) -> Result<Vec<OcrResult>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at
@@ -1103,6 +1117,19 @@ pub fn get_ocr_results(
         .map_err(|e| format!("解析数据失败: {}", e))?;
 
     Ok(results)
+}
+
+/// 获取 OCR 结果
+#[tauri::command]
+pub fn get_ocr_results(
+    record_id: String,
+    scope: Option<MemberScopeInput>,
+    db: tauri::State<Database>,
+) -> Result<Vec<OcrResult>, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    let scope = resolve_member_scope(conn, scope)?;
+    get_ocr_results_with_conn(conn, record_id, &scope)
 }
 
 /// 从 AI 返回的文本中提取 JSON 数组
@@ -1344,4 +1371,241 @@ fn name_fuzzy_match(indicator_name: &str, ocr_name: &str) -> bool {
     let b_stripped = strip_parens(&b);
 
     a_stripped == b_stripped || a_stripped.contains(&b_stripped) || b_stripped.contains(&a_stripped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn create_test_database(name: &str) -> (Database, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "health-monitor-ocr-tests-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ));
+        let db = Database::new(dir.clone()).expect("database should initialize");
+        (db, dir)
+    }
+
+    fn cleanup_test_database(db: &Database, dir: PathBuf) {
+        db.close().ok();
+        fs::remove_dir_all(dir).ok();
+    }
+
+    fn member_scope(owner_user_id: &str, member_id: &str, member_name: &str) -> ResolvedMemberScope {
+        ResolvedMemberScope {
+            owner_user_id: owner_user_id.to_string(),
+            member_id: member_id.to_string(),
+            member_name: member_name.to_string(),
+        }
+    }
+
+    fn seed_base_schema(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO checkup_projects (id, name, description, sort_order, is_active, created_at, updated_at)
+             VALUES ('proj-blood', '血常规', '', 0, 1, '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            [],
+        )
+        .expect("project should seed");
+        conn.execute(
+            "INSERT INTO indicators (id, project_id, name, unit, reference_range, sort_order, is_core, created_at)
+             VALUES ('ind-wbc', 'proj-blood', '白细胞', '10^9/L', '3.5-9.5', 0, 1, '2026-04-08T00:00:00+08:00')",
+            [],
+        )
+        .expect("indicator should seed");
+    }
+
+    fn seed_member_bundle(
+        conn: &Connection,
+        owner_user_id: &str,
+        member_id: &str,
+        record_id: &str,
+        file_id: &str,
+        ocr_id: &str,
+        parsed_items: &str,
+        status: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO checkup_records (
+                id, owner_user_id, member_id, member_name_snapshot, checkup_date, status, notes, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, '成员', '2026-04-08', 'ocr_done', '', '2026-04-08T00:00:00+08:00', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![record_id, owner_user_id, member_id],
+        )
+        .expect("record should seed");
+        conn.execute(
+            "INSERT INTO checkup_files (
+                id, owner_user_id, member_id, record_id, project_id, original_filename, stored_path, file_size, mime_type, uploaded_at
+             ) VALUES (?1, ?2, ?3, ?4, 'proj-blood', 'report.png', 'pictures/report.png', 100, 'image/png', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![file_id, owner_user_id, member_id, record_id],
+        )
+        .expect("file should seed");
+        conn.execute(
+            "INSERT INTO ocr_results (
+                id, owner_user_id, member_id, file_id, record_id, project_id, checkup_date, raw_json, parsed_items, status, error_message, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'proj-blood', '2026-04-08', '{}', ?6, ?7, '', '2026-04-08T00:00:00+08:00')",
+            rusqlite::params![ocr_id, owner_user_id, member_id, file_id, record_id, parsed_items, status],
+        )
+        .expect("ocr should seed");
+    }
+
+    #[test]
+    fn get_ocr_status_only_counts_current_member_rows() {
+        let (db, dir) = create_test_database("status");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+            seed_base_schema(conn);
+            seed_member_bundle(
+                conn,
+                "user-1",
+                "member-a",
+                "record-a",
+                "file-a",
+                "ocr-a",
+                "[]",
+                "success",
+            );
+            seed_member_bundle(
+                conn,
+                "user-1",
+                "member-b",
+                "record-b",
+                "file-b",
+                "ocr-b",
+                "[]",
+                "failed",
+            );
+
+            let status = get_ocr_status_with_conn(
+                conn,
+                "record-a".to_string(),
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("status should load");
+
+            assert_eq!(status["total_files"].as_i64(), Some(1));
+            assert_eq!(status["total_ocr"].as_i64(), Some(1));
+            assert_eq!(status["success_ocr"].as_i64(), Some(1));
+            assert_eq!(status["failed_ocr"].as_i64(), Some(0));
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn get_ocr_results_only_returns_current_member_rows() {
+        let (db, dir) = create_test_database("results");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+            seed_base_schema(conn);
+            seed_member_bundle(
+                conn,
+                "user-1",
+                "member-a",
+                "record-a",
+                "file-a",
+                "ocr-a",
+                r#"[{"name":"白细胞","value":"11.2","unit":"10^9/L","reference_range":"3.5-9.5","is_abnormal":true}]"#,
+                "success",
+            );
+            seed_member_bundle(
+                conn,
+                "user-1",
+                "member-b",
+                "record-b",
+                "file-b",
+                "ocr-b",
+                r#"[{"name":"白细胞","value":"15.0","unit":"10^9/L","reference_range":"3.5-9.5","is_abnormal":true}]"#,
+                "success",
+            );
+
+            let results = get_ocr_results_with_conn(
+                conn,
+                "record-a".to_string(),
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("results should load");
+
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].id, "ocr-a");
+            assert!(results[0].parsed_items.contains("11.2"));
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn update_ocr_item_only_rebuilds_indicator_values_inside_current_member_scope() {
+        let (db, dir) = create_test_database("update-item");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+            seed_base_schema(conn);
+            seed_member_bundle(
+                conn,
+                "user-1",
+                "member-a",
+                "record-a",
+                "file-a",
+                "ocr-a",
+                r#"[{"name":"白细胞","value":"11.2","unit":"10^9/L","reference_range":"3.5-9.5","is_abnormal":true}]"#,
+                "success",
+            );
+            seed_member_bundle(
+                conn,
+                "user-1",
+                "member-b",
+                "record-b",
+                "file-b",
+                "ocr-b",
+                r#"[{"name":"白细胞","value":"15.0","unit":"10^9/L","reference_range":"3.5-9.5","is_abnormal":true}]"#,
+                "success",
+            );
+            conn.execute(
+                "INSERT INTO indicator_values (
+                    id, ocr_result_id, record_id, project_id, indicator_id, owner_user_id, member_id, checkup_date, value, value_text, is_abnormal, created_at
+                 ) VALUES
+                    ('iv-a', 'ocr-a', 'record-a', 'proj-blood', 'ind-wbc', 'user-1', 'member-a', '2026-04-08', 11.2, '11.2', 1, '2026-04-08T00:00:00+08:00'),
+                    ('iv-b', 'ocr-b', 'record-b', 'proj-blood', 'ind-wbc', 'user-1', 'member-b', '2026-04-08', 15.0, '15.0', 1, '2026-04-08T00:00:00+08:00')",
+                [],
+            )
+            .expect("indicator values should seed");
+
+            update_ocr_item_with_conn(
+                conn,
+                "ocr-a".to_string(),
+                0,
+                OcrParsedItem {
+                    name: "白细胞".to_string(),
+                    value: "8.3".to_string(),
+                    unit: "10^9/L".to_string(),
+                    reference_range: "3.5-9.5".to_string(),
+                    is_abnormal: false,
+                },
+                &member_scope("user-1", "member-a", "本人"),
+            )
+            .expect("ocr item should update");
+
+            let member_a_value: String = conn
+                .query_row(
+                    "SELECT value_text FROM indicator_values WHERE owner_user_id = 'user-1' AND member_id = 'member-a' AND ocr_result_id = 'ocr-a'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("member A indicator should exist");
+            let member_b_value: String = conn
+                .query_row(
+                    "SELECT value_text FROM indicator_values WHERE owner_user_id = 'user-1' AND member_id = 'member-b' AND ocr_result_id = 'ocr-b'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("member B indicator should exist");
+
+            assert_eq!(member_a_value, "8.3");
+            assert_eq!(member_b_value, "15.0");
+        }
+        cleanup_test_database(&db, dir);
+    }
 }
