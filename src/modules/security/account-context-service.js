@@ -24,6 +24,7 @@ function createInitialState() {
     wallet: null,
     members: [],
     defaultMember: null,
+    currentMember: null,
     memberBlocked: false,
     memberBlockedReason: '',
     products: [],
@@ -88,6 +89,55 @@ function toArray(value) {
   }
 
   return []
+}
+
+function normalizeMemberId(value) {
+  const numeric = toNumber(value)
+  if (numeric != null) {
+    return numeric
+  }
+
+  return normalizeText(value) || null
+}
+
+function normalizeMemberItem(member) {
+  if (!member || typeof member !== 'object') {
+    return null
+  }
+
+  const memberId = normalizeMemberId(
+    member?.memberId
+    ?? member?.id
+    ?? member?.cloudMemberId,
+  )
+
+  return {
+    ...member,
+    memberId,
+    memberName: normalizeText(
+      member?.memberName
+      ?? member?.name
+      ?? member?.nickName
+      ?? member?.displayName,
+    ),
+    relationCode: normalizeText(
+      member?.relationCode
+      ?? member?.relation
+      ?? member?.relationType,
+    ),
+    isDefault: (
+      isDefaultMark(member?.defaultFlag)
+      || isDefaultMark(member?.isDefault)
+      || isDefaultMark(member?.defaultMember)
+      || isDefaultMark(member?.defaultSelected)
+    ),
+  }
+}
+
+function normalizeMembers(members) {
+  return toArray(members)
+    .map((item) => normalizeMemberItem(item))
+    .filter((item) => item?.memberId != null)
 }
 
 function pickDefaultSku(skuList) {
@@ -219,12 +269,57 @@ function mapProductsToPackageCards(products) {
 }
 
 function resolveDefaultMember(members) {
-  return members.find((item) => (
-    isDefaultMark(item?.defaultFlag)
-    || isDefaultMark(item?.isDefault)
-    || isDefaultMark(item?.defaultMember)
-    || isDefaultMark(item?.defaultSelected)
-  )) || null
+  const matched = members.find((item) => item?.isDefault)
+  if (matched) {
+    return matched
+  }
+
+  if (members.length === 1) {
+    return members[0]
+  }
+
+  return null
+}
+
+function resolveSelfMemberName(profile) {
+  const candidates = [
+    profile?.realName,
+    profile?.real_name,
+    profile?.nickName,
+    profile?.nick_name,
+    profile?.userName,
+    profile?.user_name,
+  ]
+
+  const resolved = candidates
+    .map((item) => normalizeText(item))
+    .find(Boolean)
+
+  return resolved || '本人'
+}
+
+function createSelfMemberPayload(profile) {
+  const payload = {
+    memberName: resolveSelfMemberName(profile),
+    relationCode: 'SELF',
+  }
+
+  const gender = normalizeText(profile?.gender)
+  if (gender) {
+    payload.gender = gender
+  }
+
+  const birthday = normalizeText(profile?.birthday)
+  if (birthday) {
+    payload.birthday = birthday
+  }
+
+  const mobile = normalizeText(profile?.phone)
+  if (mobile) {
+    payload.mobile = mobile
+  }
+
+  return payload
 }
 
 function computeCacheKey(session) {
@@ -251,6 +346,31 @@ export function createAccountContextService({
 
   const state = createInitialState()
 
+  async function requestAuthed(method, path, body) {
+    if (method === 'POST' && typeof client.post === 'function') {
+      return client.post(path, body, {}, { requiresAuth: true, includeUserId: true })
+    }
+
+    if (typeof client.request === 'function') {
+      return client.request(
+        path,
+        { method, body },
+        { requiresAuth: true, includeUserId: true },
+      )
+    }
+
+    throw new Error(`Unsupported authenticated request method: ${method}`)
+  }
+
+  async function listMembers() {
+    const response = await client.get('/app-api/family-members', {}, { requiresAuth: true, includeUserId: true })
+    return normalizeMembers(response)
+  }
+
+  async function createInitialSelfMember(profile) {
+    return requestAuthed('POST', '/app-api/family-members', createSelfMemberPayload(profile))
+  }
+
   async function fetchProducts() {
     const response = await client.get('/app-api/products')
     const normalizedProducts = toArray(response)
@@ -262,14 +382,24 @@ export function createAccountContextService({
   }
 
   async function fetchAuthedContext() {
-    const [profile, balance, wallet, membersResp] = await Promise.all([
+    const [profile, balance, wallet] = await Promise.all([
       client.get('/app-api/account/profile', {}, { requiresAuth: true, includeUserId: true }),
       client.get('/app-api/account/balance', {}, { requiresAuth: true, includeUserId: true }),
       client.get('/app-api/wallet', {}, { requiresAuth: true, includeUserId: true }),
-      client.get('/app-api/family-members', {}, { requiresAuth: true, includeUserId: true }),
     ])
 
-    const members = toArray(membersResp)
+    let members = await listMembers()
+    let memberInitError = ''
+
+    if (members.length === 0) {
+      try {
+        await createInitialSelfMember(profile)
+        members = await listMembers()
+      } catch (error) {
+        memberInitError = error?.message || '系统自动创建本人档案失败，请稍后重试。'
+      }
+    }
+
     const defaultMember = resolveDefaultMember(members)
 
     state.profile = profile || null
@@ -277,10 +407,11 @@ export function createAccountContextService({
     state.wallet = wallet || null
     state.members = members
     state.defaultMember = defaultMember
+    state.currentMember = defaultMember
     state.memberBlocked = !defaultMember
     state.memberBlockedReason = defaultMember
       ? ''
-      : '未找到默认成员，请先在账户中设置默认成员后再继续。'
+      : (memberInitError || '未找到默认成员，请先在账户中设置默认成员后再继续。')
     state.status = defaultMember ? 'ready' : 'blocked'
   }
 
@@ -320,6 +451,7 @@ export function createAccountContextService({
       state.wallet = null
       state.members = []
       state.defaultMember = null
+      state.currentMember = null
       state.memberBlocked = false
       state.memberBlockedReason = ''
     }
