@@ -16,10 +16,12 @@
 - `doc/epic/`
 - `doc/status/todo-list.md`
 - `doc/status/feature-done.md`
+- `doc/status/E4-联调验收脚本.md`
 
 补充说明：
 - 仓库中不存在 `产品功能开发说明书.md`，本轮暂以 `docs/桌面客户端对接文档.md`、`stitch/*` 设计稿和 `需求描述.txt` 补齐开发执行口径。
 - 设计稿图片文件已给出文件名，但缺少可直接解析的结构化标注；UI 细节以 `stitch/sidebar-user-area.html`、`stitch/model-service.html` 和 `stitch/pics/设计说明.txt` 的共同交集为准。
+- E4 多用户多成员联调与手工验收口径统一记录在 `doc/status/E4-联调验收脚本.md`。
 
 ## 2. Epic 文件列表
 
