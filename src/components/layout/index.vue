@@ -206,8 +206,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -225,6 +225,7 @@ import {
 import defaultUserAvatar from '@/assets/app.png'
 
 const route = useRoute()
+const router = useRouter()
 const appWindow = getCurrentWindow()
 const authApi = getAuthApi()
 const {
@@ -311,6 +312,21 @@ const isActive = (path) => {
 const openAuthDialog = (tab = AUTH_DIALOG_TABS.login) => {
   authDialogTab.value = tab
   authDialogVisible.value = true
+}
+
+const consumeAuthRouteQuery = async (authQuery) => {
+  if (authQuery !== AUTH_DIALOG_TABS.login && authQuery !== AUTH_DIALOG_TABS.register) {
+    return
+  }
+
+  openAuthDialog(authQuery)
+
+  const nextQuery = { ...route.query }
+  delete nextQuery.auth
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+  })
 }
 
 const refreshSessionState = () => {
@@ -418,7 +434,19 @@ onMounted(async () => {
   if (!handledTrialGift) {
     await refreshAccountContextWithFeedback({ force: true })
   }
+
+  await consumeAuthRouteQuery(route.query.auth)
 })
+
+watch(
+  () => route.query.auth,
+  (nextAuth) => {
+    if (!nextAuth) {
+      return
+    }
+    void consumeAuthRouteQuery(nextAuth)
+  }
+)
 </script>
 
 <style scoped>

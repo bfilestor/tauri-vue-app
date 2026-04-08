@@ -274,6 +274,52 @@ const usageService = createUsageService({
 })
 const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
 const buildChatScope = () => resolveLocalChatScope(authApi.getSessionState(), accountContextState)
+const isAuthenticatedSession = () => {
+    const sessionState = authApi.getSessionState()
+    return Boolean(sessionState?.isAuthenticated) && !sessionState?.isGuest
+}
+
+const promptAuthRequired = async () => {
+    ElMessage.warning('请登录或注册新用户')
+    await router.push({
+        path: '/settings',
+        query: {
+            auth: 'login',
+            tab: 'ai',
+            mode: AI_MODES.general,
+        },
+    })
+}
+
+const ensureInteractiveMemberScope = async () => {
+    if (!isAuthenticatedSession()) {
+        await promptAuthRequired()
+        return null
+    }
+
+    const scope = buildMemberScope()
+    if (!scope) {
+        ElMessage.warning(accountContextState.memberBlockedReason || '请先在账户中心设置默认成员后再试')
+        return null
+    }
+
+    return scope
+}
+
+const ensureInteractiveChatScope = async () => {
+    if (!isAuthenticatedSession()) {
+        await promptAuthRequired()
+        return null
+    }
+
+    const scope = buildChatScope()
+    if (!scope) {
+        ElMessage.warning(accountContextState.memberBlockedReason || '请先在账户中心设置默认成员后再试')
+        return null
+    }
+
+    return scope
+}
 
 const precheckingUsage = ref(false)
 const pendingRetryMessage = ref('')
@@ -366,9 +412,9 @@ const cancelEdit = (record) => {
 
 const saveEdit = async (record) => {
     try {
-        const scope = buildMemberScope()
+        const scope = await ensureInteractiveMemberScope()
         if (!scope) {
-            throw new Error('当前成员未就绪')
+            return
         }
         await invoke('update_ai_analysis_content', {
             id: record.id,
@@ -426,28 +472,11 @@ const setInput = (text) => {
     inputRef.value?.focus()
 }
 
-const promptGuestToLogin = async () => {
-    try {
-        await ElMessageBox.confirm(
-            '通用模式需要登录并购买次数后才能继续，是否前往系统设置页登录或购买？',
-            '需要登录',
-            {
-                type: 'warning',
-                confirmButtonText: '前往设置',
-                cancelButtonText: '取消'
-            }
-        )
-        router.push('/settings')
-    } catch {
-        // cancelled
-    }
-}
-
 const ensureGeneralModeReady = async (text) => {
     const sessionState = authApi.getSessionState()
     if (!sessionState?.isAuthenticated || sessionState?.isGuest) {
         pendingRetryMessage.value = text
-        await promptGuestToLogin()
+        await promptAuthRequired()
         return { ok: false, reason: 'auth_required' }
     }
 
@@ -520,9 +549,10 @@ const sendMessageWithGuard = async (text, { clearInputOnSend = false } = {}) => 
     isGenerating.value = true
 
     try {
-        const scope = buildChatScope()
+        const scope = await ensureInteractiveChatScope()
         if (!scope) {
-            throw new Error('当前成员未就绪')
+            isGenerating.value = false
+            return { sent: false, reason: 'scope_required' }
         }
         const aiMsgId = await invoke('chat_with_ai', { message: text, scope })
         currentGeneratingId.value = aiMsgId
@@ -551,9 +581,9 @@ const sendMessage = async () => {
 
 const clearHistory = async () => {
     try {
-        const scope = buildChatScope()
+        const scope = await ensureInteractiveChatScope()
         if (!scope) {
-            throw new Error('当前成员未就绪')
+            return
         }
         await ElMessageBox.confirm('确定要清空所有对话记录吗？', '确认操作', {
             type: 'warning'

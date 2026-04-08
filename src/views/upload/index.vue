@@ -449,6 +449,37 @@ const usageCheckingType = ref('')
 const usageCheckingRecordId = ref('')
 const pendingUsageAction = ref(null)
 const buildMemberScope = () => resolveLocalMemberScope(authApi.getSessionState(), accountContextState)
+const isAuthenticatedSession = () => {
+  const sessionState = authApi.getSessionState()
+  return Boolean(sessionState?.isAuthenticated) && !sessionState?.isGuest
+}
+
+const promptAuthRequired = async () => {
+  ElMessage.warning('请登录或注册新用户')
+  await router.push({
+    path: '/settings',
+    query: {
+      auth: 'login',
+      tab: 'ai',
+      mode: AI_MODES.general,
+    },
+  })
+}
+
+const ensureInteractiveMemberScope = async () => {
+  if (!isAuthenticatedSession()) {
+    await promptAuthRequired()
+    return null
+  }
+
+  const scope = buildMemberScope()
+  if (!scope) {
+    ElMessage.warning(accountContextState.memberBlockedReason || '请先设置默认成员后再试')
+    return null
+  }
+
+  return scope
+}
 
 // ===== 检查记录 =====
 const records = ref([])
@@ -525,9 +556,8 @@ const createRecord = async () => {
   }
   creating.value = true
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      ElMessage.warning('当前成员未就绪，请稍后再试')
       return
     }
 
@@ -556,9 +586,8 @@ const createRecord = async () => {
 
 const handleDeleteRecord = async (record) => {
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      ElMessage.warning('当前成员未就绪，请稍后再试')
       return
     }
 
@@ -642,9 +671,8 @@ const doUpload = async (record) => {
   }
   uploading.value = true
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      ElMessage.warning('当前成员未就绪，请稍后再试')
       return
     }
 
@@ -714,9 +742,8 @@ const fileGroups = computed(() => {
 
 const handleDeleteFile = async (file) => {
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      ElMessage.warning('当前成员未就绪，请稍后再试')
       return
     }
 
@@ -742,9 +769,10 @@ const previewFile = async (file) => {
   previewSrc.value = ''
   showPreview.value = true
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      throw new Error('当前成员未就绪')
+      showPreview.value = false
+      return
     }
     previewSrc.value = file._thumbnail || await invoke('read_file_base64', { fileId: file.id, scope })
   } catch (e) {
@@ -830,23 +858,6 @@ const isCheckingRecordAction = (recordId, usageType) => {
     && String(usageCheckingRecordId.value) === String(recordId)
 }
 
-const promptGuestToLogin = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '通用模式需要先登录并购买次数后才能继续，是否前往系统设置页？',
-      '需要登录',
-      {
-        type: 'warning',
-        confirmButtonText: '前往设置',
-        cancelButtonText: '取消',
-      }
-    )
-    router.push('/settings')
-  } catch {
-    // cancelled
-  }
-}
-
 const runActionWithUsageGuard = async ({ record, usageType, action }) => {
   if (aiModeState.mode !== AI_MODES.general) {
     pendingUsageAction.value = null
@@ -856,7 +867,7 @@ const runActionWithUsageGuard = async ({ record, usageType, action }) => {
   const sessionState = authApi.getSessionState()
   if (!sessionState?.isAuthenticated || sessionState?.isGuest) {
     pendingUsageAction.value = null
-    await promptGuestToLogin()
+    await promptAuthRequired()
     return false
   }
 
@@ -918,9 +929,10 @@ const executeStartOcr = async (record) => {
   ocrProgress.current_file = ''
 
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      throw new Error('当前成员未就绪')
+      ocrLoading.value = false
+      return
     }
     await invoke('start_ocr', { recordId: record.id, scope })
     startOcrStatusPolling(record.id)
@@ -951,9 +963,10 @@ const executeStartAiAnalysis = async (record) => {
   aiStreamRecordId.value = record.id
 
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      throw new Error('当前成员未就绪')
+      aiLoading.value = false
+      return
     }
     await invoke('start_ai_analysis', { recordId: record.id, scope })
     ElMessage.info('AI 分析已启动，请稍候...')
@@ -1017,9 +1030,9 @@ const viewOcrResults = async (record) => {
   console.log('Record:', record)
   currentViewRecord.value = record
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      throw new Error('当前成员未就绪')
+      return
     }
     console.log('Invoking get_ocr_results with recordId:', record.id)
     // 尝试同时传递 recordId 和 record_id 以兼容 Tauri 的参数映射
@@ -1051,9 +1064,11 @@ const handleRetryOcr = async (ocrItem) => {
     ocrItem.status = 'processing'
     ocrItem.error_message = '正在请求重试...'
     try {
-        const scope = buildMemberScope()
+        const scope = await ensureInteractiveMemberScope()
         if (!scope) {
-          throw new Error('当前成员未就绪')
+          ocrItem.status = 'failed'
+          ocrItem.error_message = '请登录或注册新用户'
+          return
         }
         await invoke('retry_ocr', { ocrId: ocrItem.id, scope })
     } catch (e) {
@@ -1127,9 +1142,9 @@ const handleEditOcrItem = (row, ocr) => {
 const saveOcrItem = async () => {
     savingOcrItem.value = true
     try {
-        const scope = buildMemberScope()
+        const scope = await ensureInteractiveMemberScope()
         if (!scope) {
-          throw new Error('当前成员未就绪')
+          return
         }
         await invoke('update_ocr_item', {
             ocrId: editingOcrId.value,
@@ -1162,9 +1177,9 @@ const aiResults = ref([])
 
 const viewAiResult = async (record) => {
   try {
-    const scope = buildMemberScope()
+    const scope = await ensureInteractiveMemberScope()
     if (!scope) {
-      throw new Error('当前成员未就绪')
+      return
     }
     aiResults.value = await invoke('get_ai_analysis', { recordId: record.id, scope })
     showAiDialog.value = true

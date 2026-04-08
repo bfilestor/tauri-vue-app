@@ -747,6 +747,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { useRoute } from 'vue-router'
 import {
   AI_MODES,
   CUSTOM_MODE_GUIDE_STEPS,
@@ -758,6 +759,7 @@ import {
 } from '@/modules/security/index.js'
 
 // ===== 多提供商管理 (ISS-060~066) =====
+const route = useRoute()
 const activeTab = ref('ai')
 const {
   state: accountContextState,
@@ -868,6 +870,18 @@ const activeAiMode = computed({
 })
 const isGeneralMode = computed(() => activeAiMode.value === AI_MODES.general)
 const customModeProviderGuides = computed(() => resolveCustomModeProviderGuides())
+
+const applySettingsRouteDefaults = () => {
+  const tab = typeof route.query.tab === 'string' && route.query.tab.trim()
+    ? route.query.tab.trim()
+    : 'ai'
+  activeTab.value = tab
+
+  const mode = typeof route.query.mode === 'string' && route.query.mode.trim()
+    ? route.query.mode.trim()
+    : AI_MODES.general
+  setAiMode(mode)
+}
 
 // ===== 颜色映射 =====
 const PROVIDER_COLORS = {
@@ -1551,6 +1565,7 @@ const handleRestoreData = async () => {
 
 // ===== 初始化 =====
 onMounted(() => {
+  applySettingsRouteDefaults()
   void handleRefreshAccountContext()
   loadProviders()
   loadNetworkConfig()
@@ -1560,6 +1575,7 @@ onMounted(() => {
 
 // 路由使用 keep-alive，返回设置页时需要主动刷新项目/指标数据
 onActivated(() => {
+  applySettingsRouteDefaults()
   if (activeTab.value === 'ai') {
     void handleRefreshAccountContext()
   }
