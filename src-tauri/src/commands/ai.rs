@@ -125,6 +125,15 @@ fn extract_text_segments_from_stream_line(line: &str) -> (Vec<String>, bool) {
     }
 }
 
+fn truncate_for_log(value: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= max_chars {
+        return value.to_string();
+    }
+    let prefix: String = chars.iter().take(max_chars).collect();
+    format!("{}...(truncated, total_chars={})", prefix, chars.len())
+}
+
 /// 发起 AI 分析（流式返回）
 #[tauri::command]
 pub async fn start_ai_analysis(
@@ -363,6 +372,7 @@ pub async fn start_ai_analysis(
 
     // 2. 异步发送流式请求
     tokio::spawn(async move {
+        let log_tag = "start_ai_analysis";
         let client = match http_client::build_client(&config) {
             Ok(c) => c,
             Err(e) => {
@@ -394,28 +404,35 @@ pub async fn start_ai_analysis(
             "AI 分析场景路由 - scene: analysis, model: {}, url: {}",
             model, config.api_url
         );
-        let response = match client
+        let request = client
             .post(&config.api_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await
-        {
+            .json(&request_body);
+        crate::log_request_debug(log_tag, &request, &config.api_url, &request_body);
+
+        let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
                 let err_msg = format!("AI 请求失败: {}", e);
+                log::error!("[{}] {}", log_tag, err_msg);
                 update_ai_error(&app, &analysis_id_clone, &record_id_clone, &err_msg);
                 return;
             }
         };
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let response_status = response.status();
+        if !response_status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            let err_msg = format!("AI API 错误 ({}): {}", status, body);
+            crate::log_response_debug(log_tag, response_status, &body);
+            let err_msg = format!("AI API 错误 ({}): {}", response_status, body);
             update_ai_error(&app, &analysis_id_clone, &record_id_clone, &err_msg);
             return;
+        }
+        log::info!("[{}] Response Status: {}", log_tag, response_status);
+        for (key, value) in response.headers() {
+            let display_value = value.to_str().unwrap_or("<non-utf8>");
+            log::info!("[{}] Response Header {}: {}", log_tag, key, display_value);
         }
 
         // 流式读取 SSE 响应
@@ -423,6 +440,7 @@ pub async fn start_ai_analysis(
         let mut stream = response.bytes_stream();
 
         let mut buffer = String::new();
+        let mut response_stream_preview = String::new();
         let mut done = false;
 
         while !done {
@@ -433,12 +451,18 @@ pub async fn start_ai_analysis(
             let chunk = match chunk_result {
                 Ok(c) => c,
                 Err(e) => {
-                    log::error!("流式读取错误: {}", e);
+                    log::error!(
+                        "[{}] 流式读取错误: {}，已接收响应预览: {}",
+                        log_tag,
+                        e,
+                        truncate_for_log(&response_stream_preview, 2000)
+                    );
                     break;
                 }
             };
 
             let chunk_str = String::from_utf8_lossy(&chunk);
+            response_stream_preview.push_str(&chunk_str);
             buffer.push_str(&chunk_str);
 
             // 处理 SSE 数据行
@@ -481,6 +505,21 @@ pub async fn start_ai_analysis(
                 .ok();
             }
         }
+
+        if response_stream_preview.trim().is_empty() {
+            log::info!("[{}] Response Stream Preview: <empty>", log_tag);
+        } else {
+            log::info!(
+                "[{}] Response Stream Preview: {}",
+                log_tag,
+                truncate_for_log(response_stream_preview.trim(), 4000)
+            );
+        }
+        log::info!(
+            "[{}] Response Parsed Content Length: {} chars",
+            log_tag,
+            full_content.chars().count()
+        );
 
         // 保存完成的分析结果
         if let Some(db_state) = app.try_state::<Database>() {
