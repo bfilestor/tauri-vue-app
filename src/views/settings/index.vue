@@ -160,15 +160,39 @@
                   <div>
                     <div class="flex justify-between items-center mb-1.5">
                       <label class="text-sm font-bold text-slate-700">API 密钥</label>
-                      <el-button type="primary" plain size="small" class="!px-3 !h-7" @click="testProviderConnection(activeProvider)" :loading="testingProviderId === activeProvider.id">
-                        <span class="material-symbols-outlined text-xs mr-1">wifi_tethering</span>检测
-                      </el-button>
+                      <div class="flex items-center gap-2">
+                        <el-button
+                          type="primary"
+                          plain
+                          size="small"
+                          class="!px-3 !h-7"
+                          @click="testProviderConnection(activeProvider, 'analysis')"
+                          :loading="isProviderTestLoading(activeProvider.id, 'analysis')"
+                        >
+                          <span class="material-symbols-outlined text-xs mr-1">hub</span>检测分析接口
+                        </el-button>
+                        <el-button
+                          type="warning"
+                          plain
+                          size="small"
+                          class="!px-3 !h-7"
+                          @click="testProviderConnection(activeProvider, 'ocr')"
+                          :loading="isProviderTestLoading(activeProvider.id, 'ocr')"
+                        >
+                          <span class="material-symbols-outlined text-xs mr-1">document_scanner</span>检测OCR接口
+                        </el-button>
+                      </div>
                     </div>
                     <el-input v-model="activeProvider.api_key" type="password" show-password placeholder="sk-..." @change="saveProviderField(activeProvider)" />
                   </div>
                   <div>
                     <label class="text-sm font-bold text-slate-700 mb-1.5 block">API 地址</label>
                     <el-input v-model="activeProvider.api_url" placeholder="https://api.openai.com/v1/chat/completions" @change="saveProviderField(activeProvider)" />
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 space-y-1">
+                    <p class="font-medium text-slate-700">场景路由摘要</p>
+                    <p>分析接口模型：<span class="font-mono text-slate-800">{{ activeProviderAnalysisModelName || '未设置' }}</span></p>
+                    <p>OCR 接口模型：<span class="font-mono text-slate-800">{{ activeProviderOcrModelName || '未设置' }}</span></p>
                   </div>
                 </div>
                 <div>
@@ -784,7 +808,7 @@ const { openPurchaseDialog } = usePurchaseDialog()
 const refreshingAccountContext = ref(false)
 const searchProvider = ref('')
 const activeProviderId = ref('')
-const testingProviderId = ref('')
+const testingProviderRequestKey = ref('')
 const savingPrompt = ref(false)
 
 const providers = ref([])
@@ -871,6 +895,18 @@ const groupedModels = computed(() => {
   }
   return groups
 })
+const activeProviderAnalysisModel = computed(() => providerModels.value.find((m) => m.is_default_analysis))
+const activeProviderOcrModel = computed(() => providerModels.value.find((m) => m.is_default_ocr))
+const activeProviderAnalysisModelName = computed(() => {
+  const m = activeProviderAnalysisModel.value
+  if (!m) return ''
+  return m.model_name || m.model_id || ''
+})
+const activeProviderOcrModelName = computed(() => {
+  const m = activeProviderOcrModel.value
+  if (!m) return ''
+  return m.model_name || m.model_id || ''
+})
 const accountUsage = computed(() => resolveUsageFeedback(accountContextState))
 const accountPackageCards = computed(() => accountContextState.packageCards || [])
 const activeAiMode = computed({
@@ -905,6 +941,8 @@ const PROVIDER_COLORS = {
   custom: '#6366f1',
 }
 const getProviderColor = (type) => PROVIDER_COLORS[type] || '#6366f1'
+const providerTestKey = (providerId, scene) => `${providerId}:${scene}`
+const isProviderTestLoading = (providerId, scene) => testingProviderRequestKey.value === providerTestKey(providerId, scene)
 
 const handleRefreshAccountContext = async () => {
   refreshingAccountContext.value = true
@@ -1263,16 +1301,25 @@ const handleSetDefaultForScene = async (m, scene) => {
 }
 
 // ===== 连接测试 =====
-const testProviderConnection = async (p) => {
-  testingProviderId.value = p.id
+const testProviderConnection = async (p, scene = 'analysis') => {
+  const sceneLabel = scene === 'ocr' ? 'OCR' : '分析'
+  const sceneDefaultModel = scene === 'ocr'
+    ? activeProviderOcrModel.value
+    : activeProviderAnalysisModel.value
+  if (!sceneDefaultModel) {
+    ElMessage.warning(`请先设置${sceneLabel}默认模型`)
+    return
+  }
+
+  testingProviderRequestKey.value = providerTestKey(p.id, scene)
   try {
     await saveProviderField(p) // 确保最新配置已保存
-    const result = await invoke('test_provider_connection', { providerId: p.id })
+    const result = await invoke('test_provider_connection', { providerId: p.id, scene })
     ElMessage.success(result)
   } catch (e) {
     ElMessage.error('连接测试失败: ' + e)
   } finally {
-    testingProviderId.value = ''
+    testingProviderRequestKey.value = ''
   }
 }
 

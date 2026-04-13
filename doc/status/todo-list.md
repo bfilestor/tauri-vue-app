@@ -58,7 +58,7 @@
 | E7-S1-I1 | 数据层增加场景化默认模型能力（OCR/分析双默认） | Test Passed | E6-S2-I2 | `cargo test db -- --nocapture`、`cargo test provider::tests -- --nocapture` 通过 | 已升级 DB schema 到 V4，新增 `is_default_ocr/is_default_analysis` 与场景化设默认命令（兼容旧 `set_default_model` 走 analysis） |
 | E7-S1-I2 | Provider 连通性检测改为按场景测试 | Test Passed | E7-S1-I1 | `cargo test provider::tests -- --nocapture`、`cargo check` 通过 | `test_provider_connection` 已支持 `scene=ocr|analysis`，未传 scene 默认 analysis，按场景默认模型选路并在返回消息中包含场景信息 |
 | E7-S2-I1 | 设置页模型列表增加 OCR 默认/分析默认标记与操作 | Test Passed | E7-S1-I1 | `npm run build`、`cargo check` 通过 | 模型列表已展示 `分析默认/OCR默认` 双标签，并通过 `set_default_model_for_scene` 支持双场景默认设置 |
-| E7-S2-I2 | 设置页提供商配置区增加场景化检测入口与路由摘要 | Todo | E7-S1-I2 | 待补充 | 检测按钮拆分为“检测 OCR 接口/检测分析接口” |
+| E7-S2-I2 | 设置页提供商配置区增加场景化检测入口与路由摘要 | Test Passed | E7-S1-I2 | `npm run build`、`cargo check` 通过 | 提供商配置区已拆分“检测分析接口/检测OCR接口”，并展示场景路由摘要；未配置对应场景默认模型时前端先阻断提示 |
 | E7-S3-I1 | OCR 调用链切换为 OCR 场景路由 | Todo | E7-S1-I1 | 待补充 | `start_ocr/retry_ocr` 使用 OCR 场景配置与模型 |
 | E7-S3-I2 | AI 分析与问答调用链切换为分析场景路由 | Todo | E7-S1-I1 | 待补充 | `start_ai_analysis/chat_with_ai` 使用分析场景配置与模型 |
 
