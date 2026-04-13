@@ -194,13 +194,15 @@
                             <div class="flex flex-col min-w-0">
                               <div class="flex items-center gap-2">
                                 <span class="text-sm font-medium text-slate-800 truncate">{{ m.model_name || m.model_id }}</span>
-                                <el-tag v-if="m.is_default" size="small" type="success" effect="dark" round class="!text-[10px] !h-4 !leading-4">默认</el-tag>
+                                <el-tag v-if="m.is_default_analysis" size="small" type="success" effect="dark" round class="!text-[10px] !h-4 !leading-4">分析默认</el-tag>
+                                <el-tag v-if="m.is_default_ocr" size="small" type="warning" effect="dark" round class="!text-[10px] !h-4 !leading-4">OCR默认</el-tag>
                               </div>
                               <span v-if="m.model_name && m.model_name !== m.model_id" class="text-xs text-slate-400 font-mono truncate">{{ m.model_id }}</span>
                             </div>
                           </div>
                           <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                            <el-button v-if="!m.is_default" size="small" round class="!px-2 !h-6 !text-xs" @click="handleSetDefault(m)">设默认</el-button>
+                            <el-button v-if="!m.is_default_analysis" size="small" round class="!px-2 !h-6 !text-xs" @click="handleSetDefaultForScene(m, 'analysis')">设分析默认</el-button>
+                            <el-button v-if="!m.is_default_ocr" size="small" round class="!px-2 !h-6 !text-xs" @click="handleSetDefaultForScene(m, 'ocr')">设OCR默认</el-button>
                             <el-button link size="small" @click="editModel(m)"><span class="material-symbols-outlined text-[16px] text-slate-400 hover:text-blue-500">edit</span></el-button>
                             <el-button link type="danger" size="small" @click="handleDeleteModel(m)"><span class="material-symbols-outlined text-[16px]">remove</span></el-button>
                           </div>
@@ -1251,11 +1253,12 @@ const handleDeleteModel = async (m) => {
   } catch (e) { ElMessage.error('' + e) }
 }
 
-const handleSetDefault = async (m) => {
+const handleSetDefaultForScene = async (m, scene) => {
+  const sceneLabel = scene === 'ocr' ? 'OCR' : '分析'
   try {
-    await invoke('set_default_model', { id: m.id })
+    await invoke('set_default_model_for_scene', { id: m.id, scene })
     await loadModels()
-    ElMessage.success('已设为全局默认模型')
+    ElMessage.success(`已设为${sceneLabel}默认模型`)
   } catch (e) { ElMessage.error('' + e) }
 }
 
