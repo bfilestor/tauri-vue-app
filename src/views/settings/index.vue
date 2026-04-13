@@ -103,6 +103,12 @@
               <span class="material-symbols-outlined text-sm mr-1">help</span>查看接入说明
             </el-button>
           </div>
+          <div class="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
+            <div class="grid grid-cols-2 gap-4 text-xs text-slate-600">
+              <p class="truncate">分析接口模型：<span class="font-mono text-slate-800">{{ formatSceneSummaryText(sceneRoutingSummary.analysisModel, sceneRoutingSummary.analysisProvider) }}</span></p>
+              <p class="truncate">OCR 接口模型：<span class="font-mono text-slate-800">{{ formatSceneSummaryText(sceneRoutingSummary.ocrModel, sceneRoutingSummary.ocrProvider) }}</span></p>
+            </div>
+          </div>
           <div class="flex h-[620px] border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
             <!-- 左侧: 提供商列表 -->
             <div class="w-60 border-r border-slate-100 bg-slate-50/80 flex flex-col shrink-0">
@@ -125,7 +131,9 @@
                     </div>
                     <span class="text-sm font-medium text-slate-700 truncate">{{ p.name }}</span>
                   </div>
-                  <el-switch v-model="p.enabled" size="small" @click.stop @change="toggleProviderEnabled(p)" class="shrink-0 ml-1" />
+                  <el-button link type="danger" size="small" class="shrink-0 !px-1" @click.stop="delProvider(p.id)">
+                    <span class="material-symbols-outlined text-[18px]">delete</span>
+                  </el-button>
                 </div>
                 <div v-if="filteredProviders.length === 0" class="text-center text-slate-400 mt-10 text-xs">暂无匹配</div>
               </div>
@@ -188,11 +196,6 @@
                   <div>
                     <label class="text-sm font-bold text-slate-700 mb-1.5 block">API 地址</label>
                     <el-input v-model="activeProvider.api_url" placeholder="https://api.openai.com/v1/chat/completions" @change="saveProviderField(activeProvider)" />
-                  </div>
-                  <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 space-y-1">
-                    <p class="font-medium text-slate-700">场景路由摘要</p>
-                    <p>分析接口模型：<span class="font-mono text-slate-800">{{ activeProviderAnalysisModelName || '未设置' }}</span></p>
-                    <p>OCR 接口模型：<span class="font-mono text-slate-800">{{ activeProviderOcrModelName || '未设置' }}</span></p>
                   </div>
                 </div>
                 <div>
@@ -897,37 +900,68 @@ const groupedModels = computed(() => {
 })
 const activeProviderAnalysisModel = computed(() => providerModels.value.find((m) => m.is_default_analysis))
 const activeProviderOcrModel = computed(() => providerModels.value.find((m) => m.is_default_ocr))
-const activeProviderAnalysisModelName = computed(() => {
-  const m = activeProviderAnalysisModel.value
-  if (!m) return ''
-  return m.model_name || m.model_id || ''
-})
-const activeProviderOcrModelName = computed(() => {
-  const m = activeProviderOcrModel.value
-  if (!m) return ''
-  return m.model_name || m.model_id || ''
+const sceneRoutingSummary = reactive({
+  analysisModel: '',
+  analysisProvider: '',
+  ocrModel: '',
+  ocrProvider: '',
 })
 const accountUsage = computed(() => resolveUsageFeedback(accountContextState))
 const accountPackageCards = computed(() => accountContextState.packageCards || [])
+const AI_MODE_CONFIG_KEY = 'ai_service_mode'
+const normalizeAiModeValue = (mode) => (mode === AI_MODES.custom ? AI_MODES.custom : AI_MODES.general)
+const persistAiModeSelection = async (mode) => {
+  await invoke('save_config', {
+    key: AI_MODE_CONFIG_KEY,
+    value: normalizeAiModeValue(mode),
+  })
+}
+const applyAiModeSelection = (mode) => {
+  const normalizedMode = normalizeAiModeValue(mode)
+  setAiMode(normalizedMode)
+  return normalizedMode
+}
+const loadAiModeSelection = async () => {
+  try {
+    const savedMode = await invoke('get_config', { key: AI_MODE_CONFIG_KEY })
+    if (savedMode) {
+      return applyAiModeSelection(savedMode)
+    }
+  } catch (e) {
+    console.warn('加载 AI 模式配置失败:', e)
+  }
+
+  const fallbackMode = applyAiModeSelection(aiModeState.mode)
+  if (fallbackMode === AI_MODES.custom) {
+    void persistAiModeSelection(fallbackMode)
+  }
+  return fallbackMode
+}
 const activeAiMode = computed({
   get: () => aiModeState.mode,
   set: (nextMode) => {
-    setAiMode(nextMode)
+    const normalizedMode = applyAiModeSelection(nextMode)
+    void persistAiModeSelection(normalizedMode)
   },
 })
 const isGeneralMode = computed(() => activeAiMode.value === AI_MODES.general)
 const customModeProviderGuides = computed(() => resolveCustomModeProviderGuides())
 
-const applySettingsRouteDefaults = () => {
+const applySettingsRouteDefaults = async () => {
   const tab = typeof route.query.tab === 'string' && route.query.tab.trim()
     ? route.query.tab.trim()
     : 'ai'
   activeTab.value = tab
 
-  const mode = typeof route.query.mode === 'string' && route.query.mode.trim()
+  const routeMode = typeof route.query.mode === 'string' && route.query.mode.trim()
     ? route.query.mode.trim()
-    : AI_MODES.general
-  setAiMode(mode)
+    : ''
+  if (routeMode) {
+    applyAiModeSelection(routeMode)
+    return
+  }
+
+  await loadAiModeSelection()
 }
 
 // ===== 颜色映射 =====
@@ -1080,9 +1114,81 @@ const handleOpenProviderSignup = async (guide) => {
 }
 
 // ===== 加载数据 =====
+const getModelDisplayName = (model) => model?.model_name || model?.model_id || ''
+const getProviderDisplayName = (provider) => provider?.provider_type?.toUpperCase() || provider?.name || ''
+const formatSceneSummaryText = (modelName, providerName) => {
+  if (!modelName) {
+    return '未设置'
+  }
+  if (!providerName) {
+    return modelName
+  }
+  return `${modelName}（来自 ${providerName}）`
+}
+
+const loadSceneRoutingSummary = async () => {
+  if (!providers.value.length) {
+    sceneRoutingSummary.analysisModel = ''
+    sceneRoutingSummary.analysisProvider = ''
+    sceneRoutingSummary.ocrModel = ''
+    sceneRoutingSummary.ocrProvider = ''
+    return
+  }
+
+  try {
+    const providerModelGroups = await Promise.all(
+      providers.value.map(async (provider) => {
+        try {
+          const models = await invoke('list_provider_models', { providerId: provider.id })
+          return { provider, models }
+        } catch (e) {
+          console.warn(`加载提供商模型失败(${provider.name}):`, e)
+          return { provider, models: [] }
+        }
+      }),
+    )
+
+    let analysisModel = ''
+    let analysisProvider = ''
+    let ocrModel = ''
+    let ocrProvider = ''
+    for (const { provider, models } of providerModelGroups) {
+      if (!analysisModel) {
+        const analysisDefault = models.find((model) => model.is_default_analysis)
+        analysisModel = getModelDisplayName(analysisDefault)
+        if (analysisModel) {
+          analysisProvider = getProviderDisplayName(provider)
+        }
+      }
+      if (!ocrModel) {
+        const ocrDefault = models.find((model) => model.is_default_ocr)
+        ocrModel = getModelDisplayName(ocrDefault)
+        if (ocrModel) {
+          ocrProvider = getProviderDisplayName(provider)
+        }
+      }
+      if (analysisModel && ocrModel) {
+        break
+      }
+    }
+
+    sceneRoutingSummary.analysisModel = analysisModel
+    sceneRoutingSummary.analysisProvider = analysisProvider
+    sceneRoutingSummary.ocrModel = ocrModel
+    sceneRoutingSummary.ocrProvider = ocrProvider
+  } catch (e) {
+    console.error('加载场景路由摘要失败:', e)
+    sceneRoutingSummary.analysisModel = ''
+    sceneRoutingSummary.analysisProvider = ''
+    sceneRoutingSummary.ocrModel = ''
+    sceneRoutingSummary.ocrProvider = ''
+  }
+}
+
 const loadProviders = async () => {
   try {
     providers.value = await invoke('list_providers')
+    await loadSceneRoutingSummary()
     if (providers.value.length > 0 && !activeProviderId.value) {
       activeProviderId.value = providers.value[0].id
     }
@@ -1185,12 +1291,11 @@ const saveProviderField = async (p) => {
   } catch (e) { ElMessage.error('保存失败: ' + e) }
 }
 
-const toggleProviderEnabled = async (p) => {
-  try {
-    await invoke('update_provider', { id: p.id, enabled: p.enabled })
-  } catch (e) {
-    ElMessage.error('切换失败: ' + e)
-    p.enabled = !p.enabled
+const resolveProviderDefaultSceneUsage = async (providerId) => {
+  const models = await invoke('list_provider_models', { providerId })
+  return {
+    analysis: models.some((model) => model.is_default_analysis),
+    ocr: models.some((model) => model.is_default_ocr),
   }
 }
 
@@ -1233,6 +1338,15 @@ const confirmSaveProvider = async () => {
 
 const delProvider = async (id) => {
   try {
+    const defaultSceneUsage = await resolveProviderDefaultSceneUsage(id)
+    if (defaultSceneUsage.analysis || defaultSceneUsage.ocr) {
+      const sceneLabels = []
+      if (defaultSceneUsage.analysis) sceneLabels.push('分析')
+      if (defaultSceneUsage.ocr) sceneLabels.push('OCR')
+      ElMessage.warning(`当前提供商已被设置为${sceneLabels.join(' / ')}默认模型，请先修改默认模型后再删除`)
+      return
+    }
+
     await ElMessageBox.confirm('删除提供商将同时删除其下所有模型，确认继续？', '确认', { type: 'warning' })
     await invoke('delete_provider', { id })
     if (activeProviderId.value === id) {
@@ -1288,6 +1402,7 @@ const handleDeleteModel = async (m) => {
   try {
     await invoke('delete_model', { id: m.id })
     await loadModels()
+    await loadSceneRoutingSummary()
   } catch (e) { ElMessage.error('' + e) }
 }
 
@@ -1296,6 +1411,7 @@ const handleSetDefaultForScene = async (m, scene) => {
   try {
     await invoke('set_default_model_for_scene', { id: m.id, scene })
     await loadModels()
+    await loadSceneRoutingSummary()
     ElMessage.success(`已设为${sceneLabel}默认模型`)
   } catch (e) { ElMessage.error('' + e) }
 }
@@ -1678,7 +1794,7 @@ const handleRestoreData = async () => {
 
 // ===== 初始化 =====
 onMounted(() => {
-  applySettingsRouteDefaults()
+  void applySettingsRouteDefaults()
   void handleRefreshAccountContext()
   loadProviders()
   loadNetworkConfig()
@@ -1688,7 +1804,7 @@ onMounted(() => {
 
 // 路由使用 keep-alive，返回设置页时需要主动刷新项目/指标数据
 onActivated(() => {
-  applySettingsRouteDefaults()
+  void applySettingsRouteDefaults()
   if (activeTab.value === 'ai') {
     void handleRefreshAccountContext()
   }

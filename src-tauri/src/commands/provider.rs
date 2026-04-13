@@ -372,6 +372,8 @@ pub fn delete_provider(id: String, db: State<Database>) -> Result<bool, String> 
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
+    ensure_provider_not_used_as_scene_default(conn, &id)?;
+
     // 级联删除：先删除该提供商下的所有模型
     conn.execute(
         "DELETE FROM ai_models WHERE provider_id = ?1",
@@ -386,6 +388,27 @@ pub fn delete_provider(id: String, db: State<Database>) -> Result<bool, String> 
     .map_err(|e| format!("删除提供商失败: {}", e))?;
 
     Ok(true)
+}
+
+fn ensure_provider_not_used_as_scene_default(
+    conn: &rusqlite::Connection,
+    provider_id: &str,
+) -> Result<(), String> {
+    let default_scene_model_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM ai_models
+             WHERE provider_id = ?1
+               AND (is_default_analysis = 1 OR is_default_ocr = 1)",
+            rusqlite::params![provider_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("检查提供商默认模型失败: {}", e))?;
+
+    if default_scene_model_count > 0 {
+        return Err("当前提供商已被设置为默认分析或OCR模型，请先修改默认模型后再删除".to_string());
+    }
+
+    Ok(())
 }
 
 // ===== Model CRUD (ISS-056) =====
@@ -929,6 +952,34 @@ mod tests {
 
             assert_eq!(ocr_model, "ocr-model");
             assert_eq!(analysis_model, "analysis-model");
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn deleting_provider_is_blocked_when_scene_default_model_is_in_use() {
+        let (db, dir) = create_test_database("delete-provider-guard");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            conn.execute(
+                "INSERT INTO ai_providers (id, name, type, api_key, api_url, enabled, sort_order, created_at, updated_at)
+                 VALUES ('p1', 'provider', 'openai', 'k', 'https://x.test/v1/chat/completions', 1, 0, '2026-04-13T00:00:00+08:00', '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert provider should succeed");
+
+            conn.execute(
+                "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+                 VALUES ('m1', 'p1', 'analysis-model', 'analysis-model', '', 1, 0, 1, 1, 0, '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert analysis default model should succeed");
+
+            let err = ensure_provider_not_used_as_scene_default(conn, "p1")
+                .expect_err("provider with scene default model should be blocked");
+            assert!(err.contains("先修改默认模型后再删除"));
         }
         cleanup_test_database(&db, dir);
     }
