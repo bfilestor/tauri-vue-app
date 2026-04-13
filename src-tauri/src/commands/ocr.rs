@@ -215,8 +215,8 @@ pub async fn start_ocr(
         }
 
         // 获取 AI 配置
-        let config = http_client::load_ai_config(&conn)?;
-        let model = http_client::get_default_model(&conn);
+        let config = http_client::load_ai_config_for_ocr(&conn)?;
+        let model = http_client::get_default_model_for_ocr(&conn);
 
         // 获取 OCR Prompt 模板
         let ocr_prompt = load_ocr_prompt_template(conn);
@@ -366,6 +366,10 @@ pub async fn start_ocr(
             });
 
             // 发送请求
+            log::info!(
+                "OCR 场景路由 - scene: ocr, model: {}, url: {}",
+                model, config.api_url
+            );
             let request = client
                 .post(&config.api_url)
                 .header("Authorization", format!("Bearer {}", config.api_key))
@@ -621,8 +625,8 @@ pub async fn retry_ocr(
             )
             .map_err(|e| format!("文件不存在: {}", e))?;
 
-        let config = http_client::load_ai_config(&conn)?;
-        let model = http_client::get_default_model(&conn);
+        let config = http_client::load_ai_config_for_ocr(&conn)?;
+        let model = http_client::get_default_model_for_ocr(&conn);
         let ocr_prompt = load_ocr_prompt_template(conn);
 
         // 加载指标映射
@@ -764,6 +768,10 @@ pub async fn retry_ocr(
             "max_tokens": 4096,
         });
 
+        log::info!(
+            "OCR 场景路由 - scene: ocr, model: {}, url: {}",
+            model, config.api_url
+        );
         let request = client
             .post(&config.api_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
