@@ -668,6 +668,7 @@
         <el-form-item label="提供商类型" required>
           <el-select v-model="providerForm.type" class="w-full">
             <el-option label="OpenAI" value="openai" />
+            <el-option label="智谱 AI (Zhipu)" value="zhipu" />
             <el-option label="Gemini" value="gemini" />
             <el-option label="Anthropic" value="anthropic" />
             <el-option label="Azure OpenAI" value="azure-openai" />
@@ -894,6 +895,7 @@ const applySettingsRouteDefaults = () => {
 // ===== 颜色映射 =====
 const PROVIDER_COLORS = {
   openai: '#10a37f',
+  zhipu: '#0ea5e9',
   gemini: '#4285f4',
   anthropic: '#d97706',
   'azure-openai': '#0078d4',

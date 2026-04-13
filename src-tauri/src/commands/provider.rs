@@ -89,6 +89,13 @@ fn log_response_debug(tag: &str, status: reqwest::StatusCode, response_body: &st
     log::info!("[{}] Response Body: {}", tag, response_body);
 }
 
+fn default_test_model_for_provider(provider_type: &str) -> &'static str {
+    match provider_type {
+        "zhipu" => "zai-org/GLM-5.1-FP8",
+        _ => "gpt-3.5-turbo",
+    }
+}
+
 // ===== Provider CRUD (ISS-055) =====
 
 #[tauri::command]
@@ -496,16 +503,22 @@ pub async fn test_provider_connection(
 
     let client = crate::services::http_client::build_client(&test_config)?;
 
-    // 获取该 provider 下的第一个模型，如果没有模型则使用 "gpt-3.5-turbo"
+    // 优先使用该 provider 下用户设置的默认模型（is_default=1）进行检测；
+    // 若未设置默认模型，则回退到该 provider 的第一个启用模型。
+    // 最后再按 provider_type 使用兜底测试模型。
     let model = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
         conn.query_row(
-            "SELECT model_id FROM ai_models WHERE provider_id = ?1 ORDER BY sort_order ASC LIMIT 1",
+            "SELECT model_id
+             FROM ai_models
+             WHERE provider_id = ?1 AND enabled = 1
+             ORDER BY is_default DESC, sort_order ASC
+             LIMIT 1",
             rusqlite::params![provider_id],
             |row| row.get::<_, String>(0),
         )
-        .unwrap_or_else(|_| "gpt-3.5-turbo".to_string())
+        .unwrap_or_else(|_| default_test_model_for_provider(provider_type.as_str()).to_string())
     };
 
     // 根据类型构建测试请求
@@ -531,7 +544,7 @@ pub async fn test_provider_connection(
                 .header("anthropic-version", "2023-06-01");
         }
         _ => {
-            // OpenAI 兼容类型 (openai / azure-openai / ollama / custom / gemini)
+            // OpenAI 兼容类型 (openai / azure-openai / ollama / custom / gemini / zhipu)
             if !test_config.api_key.is_empty() {
                 request = request.header("Authorization", format!("Bearer {}", test_config.api_key));
             }
