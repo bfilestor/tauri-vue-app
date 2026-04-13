@@ -57,15 +57,15 @@ function createMemberRepository(client, authApi) {
     },
     async updateMember({ ownerUserId, memberId, payload = {} } = {}) {
       resolveOwnerIdFromInput(ownerUserId)
-      return fallbackRequest('PUT', `/app-api/family-members/${memberId}`, payload)
+      return fallbackRequest('POST', `/app-api/family-members/${memberId}`, payload)
     },
     async deleteMember({ ownerUserId, memberId } = {}) {
       resolveOwnerIdFromInput(ownerUserId)
-      return fallbackRequest('DELETE', `/app-api/family-members/${memberId}`)
+      return fallbackRequest('POST', `/app-api/family-members/${memberId}/delete`)
     },
     async setDefaultMember({ ownerUserId, memberId } = {}) {
       resolveOwnerIdFromInput(ownerUserId)
-      return fallbackRequest('PUT', `/app-api/family-members/${memberId}/set-default`)
+      return fallbackRequest('POST', `/app-api/family-members/${memberId}/set-default`)
     },
   }
 }

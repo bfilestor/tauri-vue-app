@@ -67,9 +67,9 @@ test('成员 CRUD 与设默认统一走后端接口', async () => {
     client.calls.map((item) => `${item.method} ${item.path}`),
     [
       'POST /app-api/family-members',
-      'PUT /app-api/family-members/m-1',
-      'DELETE /app-api/family-members/m-1',
-      'PUT /app-api/family-members/m-2/set-default',
+      'POST /app-api/family-members/m-1',
+      'POST /app-api/family-members/m-1/delete',
+      'POST /app-api/family-members/m-2/set-default',
     ],
   )
 })

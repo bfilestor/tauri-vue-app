@@ -409,13 +409,13 @@ export function createAccountContextService({
       return requestAuthed('POST', '/app-api/family-members', payload)
     },
     async updateMember({ memberId, payload = {} } = {}) {
-      return requestAuthed('PUT', `/app-api/family-members/${memberId}`, payload)
+      return requestAuthed('POST', `/app-api/family-members/${memberId}`, payload)
     },
     async deleteMember({ memberId } = {}) {
-      return requestAuthed('DELETE', `/app-api/family-members/${memberId}`)
+      return requestAuthed('POST', `/app-api/family-members/${memberId}/delete`)
     },
     async setDefaultMember({ memberId } = {}) {
-      return requestAuthed('PUT', `/app-api/family-members/${memberId}/set-default`)
+      return requestAuthed('POST', `/app-api/family-members/${memberId}/set-default`)
     },
   }
 
