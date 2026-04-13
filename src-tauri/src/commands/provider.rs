@@ -113,6 +113,43 @@ fn normalize_model_scene(scene: &str) -> Result<&'static str, String> {
     }
 }
 
+fn resolve_connection_test_scene(scene: Option<&str>) -> Result<&'static str, String> {
+    match scene {
+        Some(value) if !value.trim().is_empty() => normalize_model_scene(value),
+        _ => Ok(MODEL_SCENE_ANALYSIS),
+    }
+}
+
+fn scene_default_column(scene: &str) -> &'static str {
+    match scene {
+        MODEL_SCENE_OCR => "is_default_ocr",
+        MODEL_SCENE_ANALYSIS => "is_default_analysis",
+        _ => "is_default_analysis",
+    }
+}
+
+fn resolve_test_model_for_scene_with_conn(
+    conn: &rusqlite::Connection,
+    provider_id: &str,
+    provider_type: &str,
+    scene: &str,
+) -> String {
+    let default_column = scene_default_column(scene);
+    let sql = format!(
+        "SELECT model_id
+         FROM ai_models
+         WHERE provider_id = ?1 AND enabled = 1
+         ORDER BY {} DESC, sort_order ASC
+         LIMIT 1",
+        default_column
+    );
+
+    conn.query_row(&sql, rusqlite::params![provider_id], |row| {
+        row.get::<_, String>(0)
+    })
+    .unwrap_or_else(|_| default_test_model_for_provider(provider_type).to_string())
+}
+
 fn sync_config_value(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), String> {
     let uid = uuid::Uuid::new_v4().to_string();
     let now = chrono::Local::now().to_rfc3339();
@@ -528,6 +565,7 @@ pub fn set_default_model_for_scene(
 #[tauri::command]
 pub async fn test_provider_connection(
     provider_id: String,
+    scene: Option<String>,
     db: State<'_, Database>,
 ) -> Result<String, String> {
     // 从数据库读取该 provider 的配置
@@ -546,6 +584,7 @@ pub async fn test_provider_connection(
     if api_url.is_empty() {
         return Err("请先填写 API 地址".to_string());
     }
+    let normalized_scene = resolve_connection_test_scene(scene.as_deref())?;
 
     // 读取全局代理设置
     let config = {
@@ -567,22 +606,17 @@ pub async fn test_provider_connection(
 
     let client = crate::services::http_client::build_client(&test_config)?;
 
-    // 优先使用该 provider 下用户设置的默认模型（is_default=1）进行检测；
-    // 若未设置默认模型，则回退到该 provider 的第一个启用模型。
-    // 最后再按 provider_type 使用兜底测试模型。
+    // 按场景选择默认模型（OCR/分析），若缺失则回退到该 provider 的第一个启用模型，
+    // 最后按 provider_type 使用兜底模型。
     let model = {
         let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
-        conn.query_row(
-            "SELECT model_id
-             FROM ai_models
-             WHERE provider_id = ?1 AND enabled = 1
-             ORDER BY is_default DESC, sort_order ASC
-             LIMIT 1",
-            rusqlite::params![provider_id],
-            |row| row.get::<_, String>(0),
+        resolve_test_model_for_scene_with_conn(
+            conn,
+            provider_id.as_str(),
+            provider_type.as_str(),
+            normalized_scene,
         )
-        .unwrap_or_else(|_| default_test_model_for_provider(provider_type.as_str()).to_string())
     };
 
     // 根据类型构建测试请求
@@ -617,7 +651,8 @@ pub async fn test_provider_connection(
     request = request.header("Content-Type", "application/json");
 
     log::info!(
-        "测试连接 - URL: {}, Model: {}, Provider Type: {}",
+        "测试连接 - Scene: {}, URL: {}, Model: {}, Provider Type: {}",
+        normalized_scene,
         test_config.api_url,
         model,
         provider_type
@@ -640,7 +675,10 @@ pub async fn test_provider_connection(
     log_response_debug("test_provider_connection", status, &response_body);
 
     if status.is_success() {
-        Ok(format!("连接成功！模型: {}", model))
+        Ok(format!(
+            "连接成功！场景: {}，模型: {}",
+            normalized_scene, model
+        ))
     } else {
         Err(format!("API 返回错误 ({}): {}", status.as_u16(), response_body))
     }
@@ -831,6 +869,66 @@ mod tests {
             let err = set_default_model_for_scene_with_conn(conn, "m1", "chat")
                 .expect_err("invalid scene should fail");
             assert!(err.contains("仅支持 ocr / analysis"));
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn resolve_connection_test_scene_defaults_to_analysis() {
+        let scene = resolve_connection_test_scene(None).expect("default scene should resolve");
+        assert_eq!(scene, MODEL_SCENE_ANALYSIS);
+
+        let explicit = resolve_connection_test_scene(Some("ocr"))
+            .expect("explicit ocr scene should resolve");
+        assert_eq!(explicit, MODEL_SCENE_OCR);
+
+        let err = resolve_connection_test_scene(Some("chat"))
+            .expect_err("invalid scene should fail");
+        assert!(err.contains("仅支持 ocr / analysis"));
+    }
+
+    #[test]
+    fn resolve_test_model_for_scene_prefers_scene_default_flag() {
+        let (db, dir) = create_test_database("scene-test-model");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            conn.execute(
+                "INSERT INTO ai_providers (id, name, type, api_key, api_url, enabled, sort_order, created_at, updated_at)
+                 VALUES ('p1', 'provider', 'openai', 'k', 'https://x.test/v1/chat/completions', 1, 0, '2026-04-13T00:00:00+08:00', '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert provider should succeed");
+
+            conn.execute(
+                "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+                 VALUES ('m1', 'p1', 'ocr-model', 'ocr-model', '', 0, 1, 0, 1, 1, '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert ocr model should succeed");
+            conn.execute(
+                "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+                 VALUES ('m2', 'p1', 'analysis-model', 'analysis-model', '', 1, 0, 1, 1, 0, '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert analysis model should succeed");
+
+            let ocr_model = resolve_test_model_for_scene_with_conn(
+                conn,
+                "p1",
+                "openai",
+                MODEL_SCENE_OCR,
+            );
+            let analysis_model = resolve_test_model_for_scene_with_conn(
+                conn,
+                "p1",
+                "openai",
+                MODEL_SCENE_ANALYSIS,
+            );
+
+            assert_eq!(ocr_model, "ocr-model");
+            assert_eq!(analysis_model, "analysis-model");
         }
         cleanup_test_database(&db, dir);
     }
