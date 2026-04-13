@@ -33,6 +33,7 @@
 | E4 | `doc/epic/E4-multi-user-member-isolation.md` | 首登默认本人成员、本地 SQLite 多用户多成员隔离、成员级报告与对话空间 |
 | E5 | `doc/epic/E5-member-management-local-operations.md` | 登录后家庭成员管理能力补齐：本地成员命令、设置页成员操作可用性修复 |
 | E6 | `doc/epic/E6-cloud-member-source-and-member-scoped-settings.md` | 修复成员来源一致性与成员级患者信息/检查项目关联：登录后成员走云端接口，患者说明与项目/指标按成员隔离 |
+| E7 | `doc/epic/E7-ocr-analysis-dual-api-routing.md` | 将 OCR 与 AI 分析/问答从同一默认接口拆分为双场景独立路由（配置、检测、运行时调用） |
 
 > 仅在处理某个 Issue 时读取对应 Epic 文件，避免加载全部需求上下文。
 
@@ -88,6 +89,12 @@
 19. E6-S1-I1
 20. E6-S2-I1
 21. E6-S2-I2
+22. E7-S1-I1
+23. E7-S1-I2
+24. E7-S2-I1
+25. E7-S2-I2
+26. E7-S3-I1
+27. E7-S3-I2
 
 ## 6. 阻塞处理
 

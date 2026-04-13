@@ -55,5 +55,11 @@
 | E6-S1-I1 | 成员仓储改为登录后云端权威源（禁用本地优先） | Test Passed | E5-S1-I2 | `npm test` 63 项通过 | `account-service` 成员仓储已移除本地优先路径，登录态成员列表/CRUD/设默认统一走 `/app-api/family-members` |
 | E6-S2-I1 | 患者信息 Prompt 改为成员级配置 | Test Passed | E6-S1-I1 | `cargo test commands::config -- --nocapture`、`cargo test commands::ai -- --nocapture`、`npm test` 通过 | `save_config/get_config` 新增成员作用域（key=`user_custom_prompt_template`），AI 分析与问答读取当前成员患者说明 |
 | E6-S2-I2 | 检查项目与指标成员化（schema + 命令 + 页面） | Test Passed | E6-S2-I1 | `cargo test commands:: -- --nocapture`、`cargo test db -- --nocapture`、`cargo check`、`npm run build` 通过 | `db.rs` 升级 V3 并为项目/指标加成员字段与索引；`project/indicator/ocr/trend/file/record` 与上传/趋势/设置页全部按当前成员作用域查询与写入 |
+| E7-S1-I1 | 数据层增加场景化默认模型能力（OCR/分析双默认） | Todo | E6-S2-I2 | 待补充 | 拟新增 `is_default_ocr`、`is_default_analysis` 并补齐迁移与命令 |
+| E7-S1-I2 | Provider 连通性检测改为按场景测试 | Todo | E7-S1-I1 | 待补充 | `test_provider_connection` 增加 `scene=ocr|analysis`，按场景模型测试 |
+| E7-S2-I1 | 设置页模型列表增加 OCR 默认/分析默认标记与操作 | Todo | E7-S1-I1 | 待补充 | 模型卡片新增双 Tag 与双设置按钮 |
+| E7-S2-I2 | 设置页提供商配置区增加场景化检测入口与路由摘要 | Todo | E7-S1-I2 | 待补充 | 检测按钮拆分为“检测 OCR 接口/检测分析接口” |
+| E7-S3-I1 | OCR 调用链切换为 OCR 场景路由 | Todo | E7-S1-I1 | 待补充 | `start_ocr/retry_ocr` 使用 OCR 场景配置与模型 |
+| E7-S3-I2 | AI 分析与问答调用链切换为分析场景路由 | Todo | E7-S1-I1 | 待补充 | `start_ai_analysis/chat_with_ai` 使用分析场景配置与模型 |
 
 
