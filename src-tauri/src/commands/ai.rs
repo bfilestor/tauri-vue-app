@@ -143,8 +143,8 @@ pub async fn start_ai_analysis(
         let scope = resolve_member_scope(conn, scope)?;
 
         // 获取 AI 配置
-        let config = http_client::load_ai_config(&conn)?;
-        let model = http_client::get_default_model(&conn);
+        let config = http_client::load_ai_config_for_analysis(&conn)?;
+        let model = http_client::get_default_model_for_analysis(&conn);
 
         // 获取 AI 分析 Prompt 模板
         let ai_analysis_prompt: String = conn
@@ -390,6 +390,10 @@ pub async fn start_ai_analysis(
             "max_tokens": 8192,
         });
 
+        log::info!(
+            "AI 分析场景路由 - scene: analysis, model: {}, url: {}",
+            model, config.api_url
+        );
         let response = match client
             .post(&config.api_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
@@ -801,8 +805,8 @@ pub async fn chat_with_ai(
         let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
         let chat_scope = resolve_chat_scope(conn, scope)?;
 
-        let config = http_client::load_ai_config(&conn)?;
-        let model = http_client::get_default_model(&conn);
+        let config = http_client::load_ai_config_for_analysis(&conn)?;
+        let model = http_client::get_default_model_for_analysis(&conn);
 
         // 获取用户自定义 Prompt（患者情况说明）
         let user_custom_prompt = read_member_scoped_config(
@@ -932,6 +936,10 @@ pub async fn chat_with_ai(
             }
         };
 
+        log::info!(
+            "AI 问答场景路由 - scene: analysis, model: {}, url: {}",
+            model, config.api_url
+        );
         let response = match client
             .post(&config.api_url)
             .header("Authorization", format!("Bearer {}", config.api_key))
