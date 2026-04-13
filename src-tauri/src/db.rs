@@ -5,6 +5,7 @@ use std::sync::Mutex;
 const SCHEMA_VERSION_V1: i32 = 1;
 const SCHEMA_VERSION_V2: i32 = 2;
 const SCHEMA_VERSION_V3: i32 = 3;
+const SCHEMA_VERSION_V4: i32 = 4;
 
 #[allow(dead_code)]
 pub const CONFIG_KEY_ACTIVE_OWNER_USER_ID: &str = "health.activeOwnerUserId";
@@ -112,11 +113,12 @@ impl Database {
 fn initialize_schema(conn: &mut Connection) -> Result<()> {
     let current_version = get_user_version(conn)?;
 
-    if current_version >= SCHEMA_VERSION_V3 {
+    if current_version >= SCHEMA_VERSION_V4 {
         let tx = conn.transaction()?;
         apply_v2_multi_user_schema(&tx)?;
         apply_v3_member_scoped_project_schema(&tx)?;
-        set_user_version(&tx, SCHEMA_VERSION_V3)?;
+        apply_v4_ai_model_scene_defaults_schema(&tx)?;
+        set_user_version(&tx, SCHEMA_VERSION_V4)?;
         tx.commit()?;
         return Ok(());
     }
@@ -136,6 +138,11 @@ fn initialize_schema(conn: &mut Connection) -> Result<()> {
     if current_version < SCHEMA_VERSION_V3 {
         apply_v3_member_scoped_project_schema(&tx)?;
         set_user_version(&tx, SCHEMA_VERSION_V3)?;
+    }
+
+    if current_version < SCHEMA_VERSION_V4 {
+        apply_v4_ai_model_scene_defaults_schema(&tx)?;
+        set_user_version(&tx, SCHEMA_VERSION_V4)?;
     }
 
     tx.commit()?;
@@ -443,6 +450,109 @@ fn apply_v3_member_scoped_project_schema(tx: &Transaction<'_>) -> Result<()> {
     Ok(())
 }
 
+fn apply_v4_ai_model_scene_defaults_schema(tx: &Transaction<'_>) -> Result<()> {
+    add_column_if_missing(
+        tx,
+        "ai_models",
+        "is_default_ocr INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        tx,
+        "ai_models",
+        "is_default_analysis INTEGER NOT NULL DEFAULT 0",
+    )?;
+
+    tx.execute_batch(
+        "
+        CREATE INDEX IF NOT EXISTS idx_ai_models_default_ocr
+            ON ai_models(is_default_ocr, enabled, sort_order, created_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_models_default_analysis
+            ON ai_models(is_default_analysis, enabled, sort_order, created_at);
+        ",
+    )?;
+
+    let analysis_default_count: i32 = tx.query_row(
+        "SELECT COUNT(*) FROM ai_models WHERE is_default_analysis = 1",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if analysis_default_count == 0 {
+        tx.execute(
+            "UPDATE ai_models
+             SET is_default_analysis = 1
+             WHERE is_default = 1",
+            [],
+        )?;
+
+        let analysis_default_count_after_legacy_copy: i32 = tx.query_row(
+            "SELECT COUNT(*) FROM ai_models WHERE is_default_analysis = 1",
+            [],
+            |row| row.get(0),
+        )?;
+
+        if analysis_default_count_after_legacy_copy == 0 {
+            tx.execute(
+                "UPDATE ai_models
+                 SET is_default_analysis = 1
+                 WHERE id = (
+                    SELECT id
+                    FROM ai_models
+                    WHERE enabled = 1
+                    ORDER BY sort_order ASC, created_at ASC
+                    LIMIT 1
+                 )",
+                [],
+            )?;
+        }
+    }
+
+    // 保持旧字段向前兼容：is_default 始终与 analysis 场景默认一致。
+    tx.execute(
+        "UPDATE ai_models
+         SET is_default = CASE WHEN is_default_analysis = 1 THEN 1 ELSE 0 END",
+        [],
+    )?;
+
+    let ocr_default_count: i32 = tx.query_row(
+        "SELECT COUNT(*) FROM ai_models WHERE is_default_ocr = 1",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if ocr_default_count == 0 {
+        tx.execute(
+            "UPDATE ai_models
+             SET is_default_ocr = 1
+             WHERE is_default_analysis = 1",
+            [],
+        )?;
+
+        let ocr_default_count_after_copy: i32 = tx.query_row(
+            "SELECT COUNT(*) FROM ai_models WHERE is_default_ocr = 1",
+            [],
+            |row| row.get(0),
+        )?;
+
+        if ocr_default_count_after_copy == 0 {
+            tx.execute(
+                "UPDATE ai_models
+                 SET is_default_ocr = 1
+                 WHERE id = (
+                    SELECT id
+                    FROM ai_models
+                    WHERE enabled = 1
+                    ORDER BY sort_order ASC, created_at ASC
+                    LIMIT 1
+                 )",
+                [],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 fn add_column_if_missing(
     tx: &Transaction<'_>,
     table_name: &str,
@@ -510,10 +620,12 @@ mod tests {
 
         initialize_schema(&mut conn)?;
 
-        assert_eq!(get_user_version(&conn)?, SCHEMA_VERSION_V3);
+        assert_eq!(get_user_version(&conn)?, 4);
         assert!(table_exists(&conn, "local_users")?);
         assert!(table_exists(&conn, "family_members")?);
         assert!(table_exists(&conn, "chat_conversations")?);
+        assert!(column_exists(&conn, "ai_models", "is_default_ocr")?);
+        assert!(column_exists(&conn, "ai_models", "is_default_analysis")?);
         assert!(column_exists(&conn, "checkup_projects", "owner_user_id")?);
         assert!(column_exists(&conn, "checkup_projects", "member_id")?);
         assert!(column_exists(&conn, "indicators", "owner_user_id")?);
@@ -554,8 +666,10 @@ mod tests {
 
         initialize_schema(&mut conn)?;
 
-        assert_eq!(get_user_version(&conn)?, SCHEMA_VERSION_V3);
+        assert_eq!(get_user_version(&conn)?, 4);
         assert!(table_exists(&conn, "local_users")?);
+        assert!(column_exists(&conn, "ai_models", "is_default_ocr")?);
+        assert!(column_exists(&conn, "ai_models", "is_default_analysis")?);
         assert!(column_exists(&conn, "checkup_projects", "owner_user_id")?);
         assert!(column_exists(&conn, "indicators", "member_id")?);
         assert!(column_exists(&conn, "ocr_results", "owner_user_id")?);

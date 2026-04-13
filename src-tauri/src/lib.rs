@@ -148,6 +148,7 @@ pub fn run() {
             commands::provider::update_model_info,
             commands::provider::delete_model,
             commands::provider::set_default_model,
+            commands::provider::set_default_model_for_scene,
             commands::provider::test_provider_connection,
 
         ])

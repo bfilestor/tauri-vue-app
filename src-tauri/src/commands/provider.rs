@@ -27,6 +27,8 @@ pub struct AiModel {
     pub model_name: String,
     pub group_name: String,
     pub is_default: bool,
+    pub is_default_ocr: bool,
+    pub is_default_analysis: bool,
     pub enabled: bool,
     pub sort_order: i32,
     pub created_at: String,
@@ -89,11 +91,101 @@ fn log_response_debug(tag: &str, status: reqwest::StatusCode, response_body: &st
     log::info!("[{}] Response Body: {}", tag, response_body);
 }
 
+const MODEL_SCENE_OCR: &str = "ocr";
+const MODEL_SCENE_ANALYSIS: &str = "analysis";
+
 fn default_test_model_for_provider(provider_type: &str) -> &'static str {
     match provider_type {
         "zhipu" => "zai-org/GLM-5.1-FP8",
         _ => "gpt-3.5-turbo",
     }
+}
+
+fn normalize_model_scene(scene: &str) -> Result<&'static str, String> {
+    let normalized = scene.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        MODEL_SCENE_OCR => Ok(MODEL_SCENE_OCR),
+        MODEL_SCENE_ANALYSIS => Ok(MODEL_SCENE_ANALYSIS),
+        _ => Err(format!(
+            "不支持的模型场景: {}（仅支持 ocr / analysis）",
+            scene
+        )),
+    }
+}
+
+fn sync_config_value(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), String> {
+    let uid = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Local::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO system_config (id, config_key, config_value, updated_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(config_key) DO UPDATE SET
+            config_value = excluded.config_value,
+            updated_at = excluded.updated_at",
+        rusqlite::params![uid, key, value, now],
+    )
+    .map_err(|e| format!("同步配置失败: {}", e))?;
+    Ok(())
+}
+
+fn set_default_model_for_scene_with_conn(
+    conn: &rusqlite::Connection,
+    id: &str,
+    scene: &str,
+) -> Result<bool, String> {
+    let normalized_scene = normalize_model_scene(scene)?;
+    let default_column = match normalized_scene {
+        MODEL_SCENE_OCR => "is_default_ocr",
+        MODEL_SCENE_ANALYSIS => "is_default_analysis",
+        _ => unreachable!(),
+    };
+
+    let clear_sql = format!("UPDATE ai_models SET {} = 0", default_column);
+    conn.execute(&clear_sql, [])
+        .map_err(|e| format!("重置默认模型失败: {}", e))?;
+
+    let set_sql = format!("UPDATE ai_models SET {} = 1 WHERE id = ?1", default_column);
+    let affected = conn
+        .execute(&set_sql, rusqlite::params![id])
+        .map_err(|e| format!("设置默认模型失败: {}", e))?;
+    if affected == 0 {
+        return Err("模型不存在".to_string());
+    }
+
+    let (model_id, api_url, api_key): (String, String, String) = conn
+        .query_row(
+            "SELECT m.model_id, p.api_url, p.api_key
+             FROM ai_models m
+             JOIN ai_providers p ON m.provider_id = p.id
+             WHERE m.id = ?1",
+            rusqlite::params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| format!("获取模型信息失败: {}", e))?;
+
+    match normalized_scene {
+        MODEL_SCENE_OCR => {
+            sync_config_value(conn, "ai_ocr_default_model", &model_id)?;
+        }
+        MODEL_SCENE_ANALYSIS => {
+            // 兼容旧链路：analysis 场景默认模型继续同步到旧 is_default 与历史配置 key。
+            conn.execute("UPDATE ai_models SET is_default = 0", [])
+                .map_err(|e| format!("重置默认模型失败: {}", e))?;
+            conn.execute(
+                "UPDATE ai_models SET is_default = 1 WHERE id = ?1",
+                rusqlite::params![id],
+            )
+            .map_err(|e| format!("设置默认模型失败: {}", e))?;
+
+            sync_config_value(conn, "ai_default_model", &model_id)?;
+            sync_config_value(conn, "ai_analysis_default_model", &model_id)?;
+            sync_config_value(conn, "ai_api_url", &api_url)?;
+            sync_config_value(conn, "ai_api_key", &api_key)?;
+        }
+        _ => unreachable!(),
+    }
+
+    Ok(true)
 }
 
 // ===== Provider CRUD (ISS-055) =====
@@ -271,7 +363,7 @@ pub fn list_provider_models(
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, provider_id, model_id, model_name, group_name, is_default, enabled, sort_order, created_at
+            "SELECT id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at
              FROM ai_models
              WHERE provider_id = ?1
              ORDER BY group_name ASC, sort_order ASC, created_at ASC",
@@ -287,9 +379,11 @@ pub fn list_provider_models(
                 model_name: row.get(3)?,
                 group_name: row.get(4)?,
                 is_default: row.get::<_, i32>(5)? == 1,
-                enabled: row.get::<_, i32>(6)? == 1,
-                sort_order: row.get(7)?,
-                created_at: row.get(8)?,
+                is_default_ocr: row.get::<_, i32>(6)? == 1,
+                is_default_analysis: row.get::<_, i32>(7)? == 1,
+                enabled: row.get::<_, i32>(8)? == 1,
+                sort_order: row.get(9)?,
+                created_at: row.get(10)?,
             })
         })
         .map_err(|e| format!("查询模型失败: {}", e))?
@@ -325,8 +419,8 @@ pub fn add_model(
         .unwrap_or(0);
 
     conn.execute(
-        "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, enabled, sort_order, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, 1, ?6, ?7)",
+        "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, 0, 0, 1, ?6, ?7)",
         rusqlite::params![id, provider_id, model_id, name, group, max_order + 1, now],
     )
     .map_err(|e| format!("添加模型失败: {}", e))?;
@@ -338,6 +432,8 @@ pub fn add_model(
         model_name: name,
         group_name: group,
         is_default: false,
+        is_default_ocr: false,
+        is_default_analysis: false,
         enabled: true,
         sort_order: max_order + 1,
         created_at: now,
@@ -413,50 +509,18 @@ pub fn set_default_model(id: String, db: State<Database>) -> Result<bool, String
     let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
     let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
 
-    // 先取消所有模型的默认标记
-    conn.execute("UPDATE ai_models SET is_default = 0", [])
-        .map_err(|e| format!("重置默认模型失败: {}", e))?;
+    set_default_model_for_scene_with_conn(conn, &id, MODEL_SCENE_ANALYSIS)
+}
 
-    // 设置指定模型为默认
-    conn.execute(
-        "UPDATE ai_models SET is_default = 1 WHERE id = ?1",
-        rusqlite::params![id],
-    )
-    .map_err(|e| format!("设置默认模型失败: {}", e))?;
-
-    // 同步到旧的 system_config 表以保持向前兼容
-    // 获取该模型的 model_id 和其 provider 的 api_url / api_key
-    let result: Result<(String, String, String), _> = conn.query_row(
-        "SELECT m.model_id, p.api_url, p.api_key
-         FROM ai_models m
-         JOIN ai_providers p ON m.provider_id = p.id
-         WHERE m.id = ?1",
-        rusqlite::params![id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    );
-
-    if let Ok((model_id, api_url, api_key)) = result {
-        let now = chrono::Local::now().to_rfc3339();
-        let sync_config = |key: &str, value: &str| -> Result<(), String> {
-            let uid = uuid::Uuid::new_v4().to_string();
-            conn.execute(
-                "INSERT INTO system_config (id, config_key, config_value, updated_at)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(config_key) DO UPDATE SET
-                    config_value = excluded.config_value,
-                    updated_at = excluded.updated_at",
-                rusqlite::params![uid, key, value, now],
-            )
-            .map_err(|e| format!("同步配置失败: {}", e))?;
-            Ok(())
-        };
-
-        sync_config("ai_default_model", &model_id)?;
-        sync_config("ai_api_url", &api_url)?;
-        sync_config("ai_api_key", &api_key)?;
-    }
-
-    Ok(true)
+#[tauri::command]
+pub fn set_default_model_for_scene(
+    id: String,
+    scene: String,
+    db: State<Database>,
+) -> Result<bool, String> {
+    let conn_guard = db.conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn_guard.as_ref().ok_or("数据库连接已关闭".to_string())?;
+    set_default_model_for_scene_with_conn(conn, &id, &scene)
 }
 
 // ===== Provider 连接测试 (ISS-057) =====
@@ -627,13 +691,25 @@ pub fn migrate_legacy_config(conn: &rusqlite::Connection) -> Result<(), String> 
         Vec::new()
     };
 
+    let resolved_default_model = if !old_default_model.is_empty()
+        && models.iter().any(|m| m == &old_default_model)
+    {
+        old_default_model
+    } else {
+        models.first().cloned().unwrap_or_default()
+    };
+
     for (i, model_id) in models.iter().enumerate() {
         let id = uuid::Uuid::new_v4().to_string();
-        let is_default = if model_id == &old_default_model { 1 } else { 0 };
+        let is_default = if model_id == &resolved_default_model {
+            1
+        } else {
+            0
+        };
 
         conn.execute(
-            "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, enabled, sort_order, created_at)
-             VALUES (?1, ?2, ?3, ?3, '', ?4, 1, ?5, ?6)",
+            "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+             VALUES (?1, ?2, ?3, ?3, '', ?4, ?4, ?4, 1, ?5, ?6)",
             rusqlite::params![id, provider_id, model_id, is_default, i as i32, now],
         )
         .map_err(|e| format!("迁移模型 {} 失败: {}", model_id, e))?;
@@ -654,4 +730,108 @@ fn get_legacy_config(conn: &rusqlite::Connection, key: &str) -> String {
         |row| row.get::<_, String>(0),
     )
     .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn create_test_database(name: &str) -> (Database, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "health-monitor-provider-tests-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ));
+        let db = Database::new(dir.clone()).expect("database should initialize");
+        (db, dir)
+    }
+
+    fn cleanup_test_database(db: &Database, dir: PathBuf) {
+        db.close().ok();
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn set_default_model_for_scene_keeps_ocr_and_analysis_independent() {
+        let (db, dir) = create_test_database("scene-defaults");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            conn.execute(
+                "INSERT INTO ai_providers (id, name, type, api_key, api_url, enabled, sort_order, created_at, updated_at)
+                 VALUES ('p1', 'provider', 'openai', 'k', 'https://x.test/v1/chat/completions', 1, 0, '2026-04-13T00:00:00+08:00', '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert provider should succeed");
+
+            conn.execute(
+                "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+                 VALUES ('m1', 'p1', 'model-ocr', 'model-ocr', '', 0, 0, 0, 1, 0, '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert model-1 should succeed");
+            conn.execute(
+                "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+                 VALUES ('m2', 'p1', 'model-analysis', 'model-analysis', '', 0, 0, 0, 1, 1, '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert model-2 should succeed");
+
+            set_default_model_for_scene_with_conn(conn, "m1", MODEL_SCENE_OCR)
+                .expect("set ocr default should succeed");
+            set_default_model_for_scene_with_conn(conn, "m2", MODEL_SCENE_ANALYSIS)
+                .expect("set analysis default should succeed");
+
+            let m1_flags: (i32, i32, i32) = conn
+                .query_row(
+                    "SELECT is_default_ocr, is_default_analysis, is_default FROM ai_models WHERE id = 'm1'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .expect("read m1 flags should succeed");
+            let m2_flags: (i32, i32, i32) = conn
+                .query_row(
+                    "SELECT is_default_ocr, is_default_analysis, is_default FROM ai_models WHERE id = 'm2'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .expect("read m2 flags should succeed");
+
+            assert_eq!(m1_flags, (1, 0, 0));
+            assert_eq!(m2_flags, (0, 1, 1));
+        }
+        cleanup_test_database(&db, dir);
+    }
+
+    #[test]
+    fn set_default_model_for_scene_rejects_invalid_scene() {
+        let (db, dir) = create_test_database("scene-invalid");
+        {
+            let conn_guard = db.conn.lock().expect("lock should succeed");
+            let conn = conn_guard.as_ref().expect("conn should exist");
+
+            conn.execute(
+                "INSERT INTO ai_providers (id, name, type, api_key, api_url, enabled, sort_order, created_at, updated_at)
+                 VALUES ('p1', 'provider', 'openai', 'k', 'https://x.test/v1/chat/completions', 1, 0, '2026-04-13T00:00:00+08:00', '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert provider should succeed");
+
+            conn.execute(
+                "INSERT INTO ai_models (id, provider_id, model_id, model_name, group_name, is_default, is_default_ocr, is_default_analysis, enabled, sort_order, created_at)
+                 VALUES ('m1', 'p1', 'model-ocr', 'model-ocr', '', 0, 0, 0, 1, 0, '2026-04-13T00:00:00+08:00')",
+                [],
+            )
+            .expect("insert model should succeed");
+
+            let err = set_default_model_for_scene_with_conn(conn, "m1", "chat")
+                .expect_err("invalid scene should fail");
+            assert!(err.contains("仅支持 ocr / analysis"));
+        }
+        cleanup_test_database(&db, dir);
+    }
 }
